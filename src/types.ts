@@ -1,4 +1,6 @@
-export type ContainerSize = '20' | '20RF' | '40' | '40RF' | '45' | '45RF';
+// Danh sách gợi ý mặc định; admin có thể thêm size mới qua bảng container_sizes
+// nên kiểu dữ liệu là string (không giới hạn union) để tránh phải ép kiểu khi mở rộng.
+export type ContainerSize = string;
 
 export type OperationType = 
   | 'nang_khach_hang' // Nâng khách hàng

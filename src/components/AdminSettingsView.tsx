@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Users, Settings, Plus, Trash2, ShieldCheck, Truck, Calculator,
+  Users, Plus, Trash2, Calculator,
   Ship, Ruler, Wrench, Check, X, Loader2,
 } from 'lucide-react';
 import { Account, ConfigLists } from '../lib/api';
@@ -39,6 +39,20 @@ export default function AdminSettingsView({
 }: AdminSettingsViewProps) {
   const [tab, setTab] = useState<'users' | 'config'>('users');
   const [busy, setBusy] = useState(false);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+
+  // Chạy 1 thao tác thay đổi dữ liệu (xoá/bật-tắt) và khoá toàn bộ nút khác cho tới khi xong.
+  const runAction = async (key: string, action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    setActiveKey(key);
+    try {
+      await action();
+    } finally {
+      setBusy(false);
+      setActiveKey(null);
+    }
+  };
 
   // New account form
   const [newUsername, setNewUsername] = useState('');
@@ -99,18 +113,8 @@ export default function AdminSettingsView({
   };
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-slate-800 font-sans">
-      <div className="max-w-5xl mx-auto p-6 space-y-6">
-        <div>
-          <span className="bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-            Quản trị viên
-          </span>
-          <h1 className="text-2xl font-black text-slate-900 mt-1.5 flex items-center space-x-2">
-            <Settings className="w-7 h-7 text-emerald-600" />
-            <span>Thiết Lập Hệ Thống</span>
-          </h1>
-        </div>
-
+    <div className="flex-1 p-6 overflow-auto">
+      <div className="max-w-5xl mx-auto space-y-6">
         {/* Tabs */}
         <div className="flex gap-2 border-b border-slate-200">
           <button
@@ -217,22 +221,26 @@ export default function AdminSettingsView({
                       <td className="py-2 pr-2 text-slate-500">{a.phone || '-'}</td>
                       <td className="py-2 pr-2">
                         <button
-                          onClick={() => onToggleAccountActive(a.id, !a.isActive)}
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer ${
+                          onClick={() => runAction(`acc-${a.id}`, () => onToggleAccountActive(a.id, !a.isActive))}
+                          disabled={busy}
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1 ${
                             a.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-400'
                           }`}
                         >
+                          {activeKey === `acc-${a.id}` && <Loader2 className="w-3 h-3 animate-spin" />}
                           {a.isActive ? 'Đang hoạt động' : 'Đã khoá'}
                         </button>
                       </td>
                       <td className="py-2 pr-2 text-right">
                         <button
                           onClick={() => {
-                            if (confirm(`Xoá tài khoản ${a.fullName}?`)) onDeleteAccount(a.id);
+                            if (busy) return;
+                            if (confirm(`Xoá tài khoản ${a.fullName}?`)) runAction(`del-acc-${a.id}`, () => onDeleteAccount(a.id));
                           }}
-                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer"
+                          disabled={busy}
+                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          {activeKey === `del-acc-${a.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                         </button>
                       </td>
                     </tr>
@@ -264,7 +272,7 @@ export default function AdminSettingsView({
                   placeholder="Tên đầy đủ"
                   className="w-1/2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
                 />
-                <button type="submit" className="p-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg cursor-pointer">
+                <button type="submit" disabled={busy} className="p-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg cursor-pointer">
                   <Plus className="w-4 h-4" />
                 </button>
               </form>
@@ -276,10 +284,11 @@ export default function AdminSettingsView({
                       <span className="text-slate-400 ml-1.5">{l.name}</span>
                     </div>
                     <button
-                      onClick={() => onToggleShippingLine(l.code, !l.is_active)}
-                      className={`cursor-pointer ${l.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
+                      onClick={() => runAction(`line-${l.code}`, () => onToggleShippingLine(l.code, !l.is_active))}
+                      disabled={busy}
+                      className={`cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${l.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
                     >
-                      {l.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                      {activeKey === `line-${l.code}` ? <Loader2 className="w-4 h-4 animate-spin" /> : l.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                     </button>
                   </div>
                 ))}
@@ -305,7 +314,7 @@ export default function AdminSettingsView({
                   placeholder="Nhãn hiển thị"
                   className="w-1/2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
                 />
-                <button type="submit" className="p-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg cursor-pointer">
+                <button type="submit" disabled={busy} className="p-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg cursor-pointer">
                   <Plus className="w-4 h-4" />
                 </button>
               </form>
@@ -314,10 +323,11 @@ export default function AdminSettingsView({
                   <div key={s.code} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2 py-1.5">
                     <span className="font-bold text-slate-700">{s.label}</span>
                     <button
-                      onClick={() => onToggleContainerSize(s.code, !s.is_active)}
-                      className={`cursor-pointer ${s.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
+                      onClick={() => runAction(`size-${s.code}`, () => onToggleContainerSize(s.code, !s.is_active))}
+                      disabled={busy}
+                      className={`cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${s.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
                     >
-                      {s.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                      {activeKey === `size-${s.code}` ? <Loader2 className="w-4 h-4 animate-spin" /> : s.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                     </button>
                   </div>
                 ))}
@@ -336,10 +346,11 @@ export default function AdminSettingsView({
                   <div key={o.code} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2 py-1.5">
                     <span className="font-bold text-slate-700">{o.label}</span>
                     <button
-                      onClick={() => onToggleOperationType(o.code, !o.is_active)}
-                      className={`cursor-pointer ${o.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
+                      onClick={() => runAction(`op-${o.code}`, () => onToggleOperationType(o.code, !o.is_active))}
+                      disabled={busy}
+                      className={`cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${o.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
                     >
-                      {o.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                      {activeKey === `op-${o.code}` ? <Loader2 className="w-4 h-4 animate-spin" /> : o.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                     </button>
                   </div>
                 ))}

@@ -1,57 +1,112 @@
 import React, { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { 
-  FileSpreadsheet, Printer, Download, Plus, 
-  Trash2, Edit, Calendar, Clock, Filter, 
-  TrendingUp, Layers, Check, Search, X, 
-  ChevronDown, RefreshCw, UserCheck, Anchor, Users
+import {
+  FileSpreadsheet, Printer, Download, Plus,
+  Trash2, Edit, Filter,
+  TrendingUp, Search, X,
+  Anchor,
+  Settings, LogOut, Calculator,
+  ChevronsLeft, ChevronsRight, Menu, Loader2
 } from 'lucide-react';
-import { JobEntry, Driver, ContainerSize, OperationType } from '../types';
-import { SHIPPING_LINES, SHIFT_DRIVERS } from '../data/mockData';
-import { formatDateTime, formatDateOnly, isJobInShift } from '../utils';
+import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
+import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics } from '../utils';
+import { ContainerSizeRow, OperationRateRow, OperationTypeRow } from '../lib/supabaseTypes';
+import { Account, ConfigLists } from '../lib/api';
+import { exportShiftReportToExcel } from '../lib/exportExcel';
+import AccountingReportPanel from './AccountingReportPanel';
+import AdminSettingsView from './AdminSettingsView';
+import SearchableSelect from './SearchableSelect';
+import DateRangePicker from './DateRangePicker';
 
 interface AccountantViewProps {
   jobs: JobEntry[];
   drivers: Driver[];
-  onAddJob: (job: JobEntry) => void;
-  onUpdateJob: (job: JobEntry) => void;
-  onDeleteJob: (jobId: string) => void;
+  rates: OperationRateRow[];
+  shippingLines: string[];
+  sizes: ContainerSizeRow[];
+  operations: OperationTypeRow[];
+  isAdmin: boolean;
+  onAddJob: (job: JobEntry) => Promise<void>;
+  onUpdateJob: (job: JobEntry) => Promise<void>;
+  onDeleteJob: (jobId: string) => Promise<void>;
+  onLogout: () => void;
+  // Admin settings (only rendered when isAdmin)
+  accounts: Account[];
+  configLists: ConfigLists;
+  onCreateAccount: (input: { username: string; fullName: string; role: UserRole; phone?: string; licenseNumber?: string }) => Promise<void>;
+  onToggleAccountActive: (id: string, isActive: boolean) => Promise<void>;
+  onDeleteAccount: (id: string) => Promise<void>;
+  onAddShippingLine: (code: string, name: string) => Promise<void>;
+  onToggleShippingLine: (code: string, isActive: boolean) => Promise<void>;
+  onAddContainerSize: (code: string, label: string) => Promise<void>;
+  onToggleContainerSize: (code: string, isActive: boolean) => Promise<void>;
+  onToggleOperationType: (code: string, isActive: boolean) => Promise<void>;
 }
 
-const OP_LIST: { key: OperationType; label: string; color: string }[] = [
-  { key: 'nang_khach_hang', label: 'Nâng khách hàng', color: 'bg-emerald-500/10 text-emerald-600' },
-  { key: 'ha_khach_hang', label: 'Hạ khách hàng', color: 'bg-blue-500/10 text-blue-600' },
-  { key: 'nhap_tau', label: 'Nhập tàu', color: 'bg-indigo-500/10 text-indigo-600' },
-  { key: 'xuat_tau', label: 'Xuất tàu', color: 'bg-purple-500/10 text-purple-600' },
-  { key: 'chuyen_bai', label: 'Chuyển bãi', color: 'bg-teal-500/10 text-teal-600' },
-  { key: 'dao_chuyen', label: 'Đảo chuyển', color: 'bg-orange-500/10 text-orange-600' },
-];
-
-const SIZE_LIST: ContainerSize[] = ['20', '20RF', '40', '40RF', '45', '45RF'];
-
-export default function AccountantView({ 
-  jobs, 
-  drivers, 
-  onAddJob, 
-  onUpdateJob, 
-  onDeleteJob 
+export default function AccountantView({
+  jobs,
+  drivers,
+  rates,
+  shippingLines,
+  sizes,
+  operations,
+  isAdmin,
+  onAddJob,
+  onUpdateJob,
+  onDeleteJob,
+  onLogout,
+  accounts,
+  configLists,
+  onCreateAccount,
+  onToggleAccountActive,
+  onDeleteAccount,
+  onAddShippingLine,
+  onToggleShippingLine,
+  onAddContainerSize,
+  onToggleContainerSize,
+  onToggleOperationType
 }: AccountantViewProps) {
   // Filter states - Defaulting to matching the screenshot date and shift
   const [filterDate, setFilterDate] = useState('2026-07-20');
+  const [filterToDate, setFilterToDate] = useState('2026-07-20'); // Khi khác filterDate -> chế độ xem khoảng ngày
   const [filterShift, setFilterShift] = useState<'day' | 'night' | 'all'>('night');
-  const [filterDriver, setFilterDriver] = useState<string>('1'); // Default to Vũ Xuân Tuyên
+  const [filterDriver, setFilterDriver] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  // Mỗi tab có URL riêng: /accountant, /accountant/report, /accountant/settings
+  const location = useLocation();
+  const navigate = useNavigate();
+  const urlTab: 'dashboard' | 'report' | 'settings' = location.pathname.endsWith('/settings')
+    ? 'settings'
+    : location.pathname.endsWith('/report')
+    ? 'report'
+    : 'dashboard';
+  const activeTab = urlTab === 'settings' && !isAdmin ? 'dashboard' : urlTab;
+  const setActiveTab = (tab: 'dashboard' | 'report' | 'settings') => {
+    navigate(tab === 'dashboard' ? '/accountant' : `/accountant/${tab}`);
+  };
+
+  const isRangeMode = filterToDate !== filterDate;
+  const driverOptions = [{ value: 'all', label: 'Tất cả lái xe' }, ...drivers.map((d) => ({ value: d.id, label: d.name }))];
+
   // Create / Edit entry modal state
   const [showModal, setShowModal] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editingJobId, setEditingJobId] = useState<string | null>(null);
 
+  // Loading states cho thao tác thêm/sửa/xoá - chặn thao tác khác khi chưa xong
+  const [isSavingJob, setIsSavingJob] = useState(false);
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const isMutating = isSavingJob || deletingJobId !== null;
+
   // Form states
   const [formContainerNo, setFormContainerNo] = useState('');
-  const [formDriverId, setFormDriverId] = useState('1');
-  const [formLine, setFormLine] = useState('MAE/MSK');
-  const [formSize, setFormSize] = useState<ContainerSize>('40');
+  const [formDriverId, setFormDriverId] = useState('');
+  const [formLine, setFormLine] = useState('');
+  const [formSize, setFormSize] = useState<ContainerSize>('');
   const [formOperation, setFormOperation] = useState<OperationType>('nang_khach_hang');
   const [formNotes, setFormNotes] = useState('');
   const [formTime, setFormTime] = useState('');
@@ -62,16 +117,20 @@ export default function AccountantView({
       // 1. Filter by Driver
       if (filterDriver !== 'all' && job.driverId !== filterDriver) return false;
       
-      // 2. Filter by Shift / Date
-      if (!isJobInShift(job.timestamp, filterDate, filterShift)) return false;
+      // 2. Filter by Date: either a from-to range, or single-day shift
+      if (isRangeMode) {
+        if (!isJobInDateRange(job.timestamp, filterDate, filterToDate)) return false;
+      } else {
+        if (!isJobInShift(job.timestamp, filterDate, filterShift)) return false;
+      }
       
-      // 3. Filter by Search Query (container no, line, notes)
+      // 3. Filter by Search Query (container no, line, notes) - không phân biệt dấu
       if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const matchesContainer = job.containerNo.toLowerCase().includes(query);
-        const matchesLine = job.line.toLowerCase().includes(query);
-        const matchesNotes = job.notes?.toLowerCase().includes(query);
-        const matchesDriver = job.driverName.toLowerCase().includes(query);
+        const query = stripDiacritics(searchQuery);
+        const matchesContainer = stripDiacritics(job.containerNo).includes(query);
+        const matchesLine = stripDiacritics(job.line).includes(query);
+        const matchesNotes = job.notes ? stripDiacritics(job.notes).includes(query) : false;
+        const matchesDriver = stripDiacritics(job.driverName).includes(query);
         if (!matchesContainer && !matchesLine && !matchesNotes && !matchesDriver) return false;
       }
       
@@ -88,10 +147,10 @@ export default function AccountantView({
   const handleOpenAddModal = () => {
     setIsEditing(false);
     setFormContainerNo('');
-    setFormDriverId(filterDriver !== 'all' ? filterDriver : '1');
-    setFormLine('MAE/MSK');
-    setFormSize('40');
-    setFormOperation('nang_khach_hang');
+    setFormDriverId(filterDriver !== 'all' ? filterDriver : (drivers[0]?.id ?? ''));
+    setFormLine(shippingLines[0] ?? '');
+    setFormSize(sizes[0]?.code ?? '');
+    setFormOperation(operations[0]?.code ?? 'nang_khach_hang');
     setFormNotes('');
     
     // Set default current date/time in local timezone for datetime-local input
@@ -120,9 +179,9 @@ export default function AccountantView({
     setShowModal(true);
   };
 
-  const handleSaveJob = (e: React.FormEvent) => {
+  const handleSaveJob = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formContainerNo.trim()) return;
+    if (!formContainerNo.trim() || isMutating) return;
 
     const selectedDriverObj = drivers.find(d => d.id === formDriverId) || drivers[0];
 
@@ -138,13 +197,17 @@ export default function AccountantView({
       notes: formNotes.trim()
     };
 
-    if (isEditing) {
-      onUpdateJob(jobData);
-    } else {
-      onAddJob(jobData);
+    setIsSavingJob(true);
+    try {
+      if (isEditing) {
+        await onUpdateJob(jobData);
+      } else {
+        await onAddJob(jobData);
+      }
+      setShowModal(false);
+    } finally {
+      setIsSavingJob(false);
     }
-    
-    setShowModal(false);
   };
 
   // Helper to count specific operation & size
@@ -155,7 +218,11 @@ export default function AccountantView({
   // Calculate Shift Subtitle
   const getShiftSubtitle = () => {
     const formattedDate = formatDateOnly(filterDate);
-    
+
+    if (isRangeMode) {
+      return `Báo cáo từ ${formattedDate} đến ${formatDateOnly(filterToDate)}`;
+    }
+
     // Split date to calculate previous day if night shift
     const fDateObj = new Date(filterDate);
     const prevDateObj = new Date(fDateObj);
@@ -176,54 +243,22 @@ export default function AccountantView({
     return drivers.find(d => d.id === filterDriver)?.name || '';
   };
 
-  // Export CSV
-  const handleExportCSV = () => {
-    const headers = [
-      'TT', 'Ngay', 'So hieu container', 'Lines', 'Size', 
-      'Nang KH 20', 'Nang KH 20RF', 'Nang KH 40', 'Nang KH 40RF', 'Nang KH 45', 'Nang KH 45RF',
-      'Ha KH 20', 'Ha KH 20RF', 'Ha KH 40', 'Ha KH 40RF', 'Ha KH 45', 'Ha KH 45RF',
-      'Nhap tau 20', 'Nhap tau 20RF', 'Nhap tau 40', 'Nhap tau 40RF', 'Nhap tau 45', 'Nhap tau 45RF',
-      'Xuat tau 20', 'Xuat tau 20RF', 'Xuat tau 40', 'Xuat tau 40RF', 'Xuat tau 45', 'Xuat tau 45RF',
-      'Chuyen bai 20', 'Chuyen bai 20RF', 'Chuyen bai 40', 'Chuyen bai 40RF', 'Chuyen bai 45', 'Chuyen bai 45RF',
-      'Dao chuyen 20', 'Dao chuyen 20RF', 'Dao chuyen 40', 'Dao chuyen 40RF', 'Dao chuyen 45', 'Dao chuyen 45RF',
-      'Ghi chu'
-    ];
-
-    const rows = filteredJobs.map((job, idx) => {
-      const formattedTime = formatDateTime(job.timestamp);
-      const rowData = [
-        idx + 1,
-        formattedTime,
-        job.containerNo,
-        job.line,
-        job.size,
-      ];
-
-      // Add operation checkmarks
-      OP_LIST.forEach(op => {
-        SIZE_LIST.forEach(size => {
-          if (job.operation === op.key && job.size === size) {
-            rowData.push('X');
-          } else {
-            rowData.push('');
-          }
-        });
+  // Export Excel (.xlsx) - \u0111\u1ECBnh d\u1EA1ng gi\u1ED1ng h\u1EC7t b\u1EA3ng hi\u1EC3n th\u1ECB tr\u00EAn web
+  const [isExporting, setIsExporting] = useState(false);
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+      await exportShiftReportToExcel({
+        jobs: filteredJobs,
+        sizes,
+        operations,
+        subtitle: getShiftSubtitle(),
+        driverLabel: getSelectedDriverName(),
+        filenamePrefix: `Bao_Cao_Ca_${filterDate}_${isRangeMode ? filterToDate : filterShift}`,
       });
-
-      rowData.push(job.notes || '');
-      return rowData.join(',');
-    });
-
-    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
-      + [headers.join(','), ...rows].join('\n');
-    
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Bao_Cao_Ca_Cuoi_Ngay_${filterDate}_${filterShift}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handlePrint = () => {
@@ -233,49 +268,110 @@ export default function AccountantView({
   return (
     <div className="min-h-screen flex font-sans bg-[#f8fafc] text-slate-800">
       
-      {/* Sidebar Navigation - Hidden in print / mobile */}
-      <aside className="w-64 bg-[#0f172a] text-slate-100 flex flex-col justify-between hidden lg:flex shrink-0 no-print border-r border-slate-850">
-        <div className="p-6">
-          <div className="flex items-center space-x-3 mb-8">
-            <div className="p-2 bg-blue-600 rounded-xl">
-              <Anchor className="w-6 h-6 text-white" />
+      {/* Backdrop cho menu di động (chỉ hiện dưới breakpoint lg) */}
+      {mobileNavOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden no-print"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
+      {/* Sidebar Navigation - drawer trên di động/tablet, cố định trên desktop */}
+      <aside
+        className={`${mobileNavOpen ? 'flex' : 'hidden'} lg:flex flex-col justify-between fixed lg:static inset-y-0 left-0 z-50 w-64 ${
+          sidebarCollapsed ? 'lg:w-20' : 'lg:w-64'
+        } bg-[#0f172a] text-slate-100 shrink-0 no-print border-r border-slate-850 transition-all duration-200`}
+      >
+        <div className="p-4">
+          <div className={`flex items-center mb-8 ${sidebarCollapsed ? 'flex-col space-y-2' : 'justify-between'}`}>
+            <div className={`flex items-center space-x-3 ${sidebarCollapsed ? 'flex-col space-x-0 space-y-2' : ''}`}>
+              <div className="p-2 bg-blue-600 rounded-xl shrink-0">
+                <Anchor className="w-6 h-6 text-white" />
+              </div>
+              {!sidebarCollapsed && (
+                <div>
+                  <h2 className="text-sm font-black tracking-wider uppercase text-white">VẬN TẢI PRO</h2>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">ICD Hải Phòng</p>
+                </div>
+              )}
             </div>
-            <div>
-              <h2 className="text-sm font-black tracking-wider uppercase text-white">VẬN TẢI PRO</h2>
-              <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">ICD Hải Phòng</p>
-            </div>
+            <button
+              onClick={() => setSidebarCollapsed((v) => !v)}
+              title={sidebarCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
+              className="hidden lg:flex p-1.5 text-slate-400 hover:text-white hover:bg-slate-900/60 rounded-lg cursor-pointer transition-colors shrink-0"
+            >
+              {sidebarCollapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
+            </button>
+            <button
+              onClick={() => setMobileNavOpen(false)}
+              title="Đóng menu"
+              className="lg:hidden p-1.5 text-slate-400 hover:text-white hover:bg-slate-900/60 rounded-lg cursor-pointer transition-colors shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
           <nav className="space-y-1">
-            <button className="w-full flex items-center space-x-3 bg-slate-800 text-white font-bold text-xs px-4 py-3 rounded-xl transition-all text-left cursor-pointer">
-              <FileSpreadsheet className="w-4.5 h-4.5 text-blue-400" />
-              <span>Bảng Điều Khiển</span>
+            <button
+              onClick={() => { setActiveTab('dashboard'); setMobileNavOpen(false); }}
+              title="Bảng Điều Khiển"
+              className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                sidebarCollapsed ? 'lg:justify-center' : ''
+              } space-x-3 text-left ${
+                activeTab === 'dashboard' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+              }`}
+            >
+              <FileSpreadsheet className="w-4.5 h-4.5 text-blue-400 shrink-0" />
+              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Bảng Điều Khiển</span>
             </button>
-            <button className="w-full flex items-center space-x-3 text-slate-450 hover:text-white font-bold text-xs px-4 py-3 rounded-xl hover:bg-slate-900/60 transition-all text-left cursor-pointer">
-              <Clock className="w-4.5 h-4.5 text-slate-500" />
-              <span>Lịch Sử Chấm Công</span>
+            <button
+              onClick={() => { setActiveTab('report'); setMobileNavOpen(false); }}
+              title="Báo Cáo Kế Toán"
+              className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                sidebarCollapsed ? 'lg:justify-center' : ''
+              } space-x-3 text-left ${
+                activeTab === 'report' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+              }`}
+            >
+              <Calculator className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Kế Toán</span>
             </button>
-            <button className="w-full flex items-center space-x-3 text-slate-450 hover:text-white font-bold text-xs px-4 py-3 rounded-xl hover:bg-slate-900/60 transition-all text-left cursor-pointer">
-              <Users className="w-4.5 h-4.5 text-slate-500" />
-              <span>Danh Sách Tài Xế</span>
-            </button>
-            <button className="w-full flex items-center space-x-3 text-slate-450 hover:text-white font-bold text-xs px-4 py-3 rounded-xl hover:bg-slate-900/60 transition-all text-left cursor-pointer">
-              <TrendingUp className="w-4.5 h-4.5 text-slate-500" />
-              <span>Báo Cáo Kế Toán</span>
-            </button>
+            {isAdmin && (
+              <button
+                onClick={() => { setActiveTab('settings'); setMobileNavOpen(false); }}
+                title="Thiết Lập Hệ Thống"
+                className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                  sidebarCollapsed ? 'lg:justify-center' : ''
+                } space-x-3 text-left ${
+                  activeTab === 'settings' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                }`}
+              >
+                <Settings className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+                <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Thiết Lập Hệ Thống</span>
+              </button>
+            )}
           </nav>
         </div>
 
         {/* Profile Admin Badge at bottom of Sidebar */}
         <div className="p-4 border-t border-slate-850 bg-slate-950/40">
-          <div className="flex items-center space-x-3">
-            <div className="w-9 h-9 rounded-full bg-blue-600/15 text-blue-400 flex items-center justify-center font-bold border border-blue-500/20 shadow-sm text-sm">
-              KT
+          <div className={`flex items-center justify-between ${sidebarCollapsed ? 'lg:flex-col lg:space-y-2' : ''}`}>
+            <div className={`flex items-center space-x-3 ${sidebarCollapsed ? 'lg:space-x-0' : ''}`}>
+              <div className="w-9 h-9 rounded-full bg-blue-600/15 text-blue-400 flex items-center justify-center font-bold border border-blue-500/20 shadow-sm text-sm shrink-0">
+                {isAdmin ? 'AD' : 'KT'}
+              </div>
+              <div className={sidebarCollapsed ? 'lg:hidden' : ''}>
+                <p className="text-xs font-black text-white leading-tight">{isAdmin ? 'Quản trị viên' : 'Kế toán trưởng'}</p>
+                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Ban điều hành</p>
+              </div>
             </div>
-            <div>
-              <p className="text-xs font-black text-white leading-tight">Kế toán trưởng</p>
-              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Ban điều hành</p>
-            </div>
+            <button
+              onClick={() => { onLogout(); setMobileNavOpen(false); }}
+              title="Đăng xuất"
+              className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-900/60 rounded-lg cursor-pointer transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
       </aside>
@@ -287,29 +383,41 @@ export default function AccountantView({
         <div className="bg-white border-b border-slate-200 px-6 py-4 shadow-xs no-print">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
             <div>
+              <button
+                onClick={() => setMobileNavOpen(true)}
+                title="Mở menu"
+                className="lg:hidden mb-2 -ml-1.5 p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
               <span className="bg-blue-50 border border-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
                 Kế toán & Quản trị viên
               </span>
               <h1 className="text-xl md:text-2xl font-black text-slate-900 mt-1.5 flex items-center space-x-2">
-                <FileSpreadsheet className="w-7 h-7 text-blue-600" />
-                <span>Hệ Thống Quản Lý Báo Cáo Ca</span>
+                {activeTab === 'settings' ? <Settings className="w-7 h-7 text-blue-600" /> : <FileSpreadsheet className="w-7 h-7 text-blue-600" />}
+                <span>
+                  {activeTab === 'settings' ? 'Thiết Lập Hệ Thống' : activeTab === 'report' ? 'Báo Cáo Kế Toán' : 'Hệ Thống Quản Lý Báo Cáo Ca'}
+                </span>
               </h1>
             </div>
 
+          {activeTab !== 'settings' && (
           <div className="flex items-center gap-2">
             <button
               onClick={handleOpenAddModal}
-              className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm px-4 py-2.5 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer"
+              disabled={isMutating}
+              className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm px-4 py-2.5 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Thêm lượt mới</span>
             </button>
             <button
-              onClick={handleExportCSV}
-              className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-sm px-4 py-2.5 rounded-lg transition-all cursor-pointer"
+              onClick={handleExportExcel}
+              disabled={isExporting}
+              className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-white font-bold text-sm px-4 py-2.5 rounded-lg transition-all cursor-pointer"
             >
               <Download className="w-4 h-4" />
-              <span>Tải File Excel/CSV</span>
+              <span>{isExporting ? 'Đang tạo file...' : 'Tải Excel'}</span>
             </button>
             <button
               onClick={handlePrint}
@@ -319,9 +427,11 @@ export default function AccountantView({
               <span>In Báo Cáo</span>
             </button>
           </div>
+          )}
         </div>
 
         {/* Dynamic Interactive Stats widgets */}
+        {activeTab !== 'settings' && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-gradient-to-br from-white to-[#f8fafc] p-4 rounded-xl border border-slate-200/80 shadow-xs flex items-center justify-between transition-all hover:shadow-md">
             <div>
@@ -363,33 +473,34 @@ export default function AccountantView({
             </div>
           </div>
         </div>
+        )}
       </div>
 
       {/* 2. Filters bar */}
+      {activeTab !== 'settings' && (
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center gap-4 no-print shadow-xs">
         <div className="flex items-center space-x-2 text-xs font-black uppercase text-slate-500 tracking-wider">
           <Filter className="w-4 h-4 text-slate-400" />
           <span>Bộ Lọc Xem Báo Cáo:</span>
         </div>
 
-        {/* Date Filter */}
-        <div className="flex items-center space-x-2 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg">
-          <Calendar className="w-4 h-4 text-slate-500" />
-          <input 
-            type="date" 
-            value={filterDate}
-            onChange={(e) => setFilterDate(e.target.value)}
-            className="bg-transparent border-none text-sm font-bold text-slate-700 focus:outline-none"
-          />
-        </div>
+        {/* Date Range Filter */}
+        <DateRangePicker
+          from={filterDate}
+          to={filterToDate}
+          onChange={(newFrom, newTo) => {
+            setFilterDate(newFrom);
+            setFilterToDate(newTo);
+          }}
+        />
 
-        {/* Shift Filter */}
-        <div className="flex items-center space-x-2 bg-slate-100 border border-slate-200 px-1 py-1 rounded-lg">
+        {/* Shift Filter - chỉ áp dụng khi xem đúng 1 ngày */}
+        <div className={`flex items-center space-x-2 bg-slate-100 border border-slate-200 px-1 py-1 rounded-lg ${isRangeMode ? 'opacity-40 pointer-events-none' : ''}`}>
           <button
             onClick={() => setFilterShift('night')}
             className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
-              filterShift === 'night' 
-                ? 'bg-slate-900 text-white shadow-xs' 
+              filterShift === 'night'
+                ? 'bg-slate-900 text-white shadow-xs'
                 : 'text-slate-600 hover:bg-slate-200'
             }`}
           >
@@ -398,8 +509,8 @@ export default function AccountantView({
           <button
             onClick={() => setFilterShift('day')}
             className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
-              filterShift === 'day' 
-                ? 'bg-slate-900 text-white shadow-xs' 
+              filterShift === 'day'
+                ? 'bg-slate-900 text-white shadow-xs'
                 : 'text-slate-600 hover:bg-slate-200'
             }`}
           >
@@ -408,8 +519,8 @@ export default function AccountantView({
           <button
             onClick={() => setFilterShift('all')}
             className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
-              filterShift === 'all' 
-                ? 'bg-slate-900 text-white shadow-xs' 
+              filterShift === 'all'
+                ? 'bg-slate-900 text-white shadow-xs'
                 : 'text-slate-600 hover:bg-slate-200'
             }`}
           >
@@ -417,20 +528,14 @@ export default function AccountantView({
           </button>
         </div>
 
-        {/* Driver Filter */}
-        <div className="flex items-center space-x-2 bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg">
-          <UserCheck className="w-4 h-4 text-slate-500" />
-          <select
-            value={filterDriver}
-            onChange={(e) => setFilterDriver(e.target.value)}
-            className="bg-transparent border-none text-sm font-bold text-slate-700 focus:outline-none cursor-pointer"
-          >
-            <option value="all">Tất cả lái xe</option>
-            {drivers.map(d => (
-              <option key={d.id} value={d.id}>{d.name}</option>
-            ))}
-          </select>
-        </div>
+        {/* Driver Filter with search */}
+        <SearchableSelect
+          options={driverOptions}
+          value={filterDriver}
+          onChange={setFilterDriver}
+          placeholder="Tìm tài xế..."
+          className="w-56"
+        />
 
         {/* Text Search */}
         <div className="flex-1 min-w-[200px] relative">
@@ -452,7 +557,25 @@ export default function AccountantView({
           )}
         </div>
       </div>
+      )}
 
+      {activeTab === 'settings' ? (
+        <AdminSettingsView
+          accounts={accounts}
+          configLists={configLists}
+          onCreateAccount={onCreateAccount}
+          onToggleAccountActive={onToggleAccountActive}
+          onDeleteAccount={onDeleteAccount}
+          onAddShippingLine={onAddShippingLine}
+          onToggleShippingLine={onToggleShippingLine}
+          onAddContainerSize={onAddContainerSize}
+          onToggleContainerSize={onToggleContainerSize}
+          onToggleOperationType={onToggleOperationType}
+        />
+      ) : activeTab === 'report' ? (
+        <AccountingReportPanel jobs={filteredJobs} rates={rates} subtitle={getShiftSubtitle()} />
+      ) : (
+      <>
       {/* 3. The Report View (Matching the requested template) */}
       <div className="flex-1 p-6 overflow-auto">
         <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs min-w-[1200px] print:border-none print:shadow-none print:p-0">
@@ -473,6 +596,19 @@ export default function AccountantView({
           {/* Grid Container Table */}
           <div className="overflow-x-auto border border-black max-w-full">
             <table className="w-full text-center text-xs border-collapse table-fixed select-all">
+              <colgroup>
+                <col className="w-[40px]" />
+                <col className="w-[130px]" />
+                <col className="w-[120px]" />
+                <col className="w-[100px]" />
+                <col className="w-[40px]" />
+                <col className="w-[40px]" />
+                {Array.from({ length: sizes.length * operations.length }).map((_, i) => (
+                  <col key={i} className="w-[44px]" />
+                ))}
+                <col className="w-[180px]" />
+                <col className="w-[80px]" />
+              </colgroup>
               <thead>
                 {/* 1st Header Row */}
                 <tr className="bg-[#FFD966] text-black font-extrabold border-b border-black">
@@ -482,41 +618,39 @@ export default function AccountantView({
                   <th rowSpan={2} className="border-r border-black p-1 w-[100px] text-[11px]">Lines</th>
                   <th rowSpan={2} className="border-r border-black p-1 w-[40px] text-[11px]">Hãng</th>
                   <th rowSpan={2} className="border-r border-black p-1 w-[40px] text-[11px]">Size</th>
-                  
-                  {/* Operations Groups */}
-                  <th colSpan={6} className="border-r border-black p-1 text-[11px] bg-[#FFE599]">Nâng khách hàng</th>
-                  <th colSpan={6} className="border-r border-black p-1 text-[11px] bg-[#FFE599]">Hạ khách hàng</th>
-                  <th colSpan={6} className="border-r border-black p-1 text-[11px] bg-[#FFE599]">Nhập tàu</th>
-                  <th colSpan={6} className="border-r border-black p-1 text-[11px] bg-[#FFE599]">Xuất tàu</th>
-                  <th colSpan={6} className="border-r border-black p-1 text-[11px] bg-[#FFE599]">Chuyển bãi</th>
-                  <th colSpan={6} className="border-r border-black p-1 text-[11px] bg-[#FFE599]">Đảo chuyển</th>
-                  
+
+                  {/* Operations Groups - lấy từ Thiết Lập Hệ Thống */}
+                  {operations.map((op) => (
+                    <th key={op.code} colSpan={sizes.length} className="border-r border-black p-1 text-[11px] bg-[#FFE599]">
+                      {op.label}
+                    </th>
+                  ))}
+
                   <th rowSpan={2} className="p-1 w-[180px] text-[11px]">Ghi chú</th>
                   <th rowSpan={2} className="p-1 w-[80px] text-[11px] border-l border-black no-print">Thao tác</th>
                 </tr>
 
                 {/* 2nd Header Row (Sub-columns) */}
                 <tr className="bg-[#FFF2CC] text-black font-bold border-b border-black">
-                  {/* Loop 6 operations */}
-                  {Array.from({ length: 6 }).map((_, opIdx) => (
-                    <React.Fragment key={opIdx}>
-                      {SIZE_LIST.map((size) => (
-                        <th 
-                          key={size} 
-                          className="border-r border-black text-[9px] font-extrabold w-[34px] py-1 px-0 bg-[#FFF2CC]"
+                  {operations.map((op) => (
+                    <React.Fragment key={op.code}>
+                      {sizes.map((size) => (
+                        <th
+                          key={`${op.code}-${size.code}`}
+                          className="border-r border-black text-[9px] font-extrabold py-1 px-0 bg-[#FFF2CC] overflow-hidden whitespace-nowrap"
                         >
-                          {size}
+                          {size.label}
                         </th>
                       ))}
                     </React.Fragment>
                   ))}
                 </tr>
               </thead>
-              
+
               <tbody className="divide-y divide-black text-black bg-white font-medium font-mono">
                 {filteredJobs.length === 0 ? (
                   <tr>
-                    <td colSpan={44} className="py-12 text-center text-slate-400 font-sans italic">
+                    <td colSpan={6 + sizes.length * operations.length + 2} className="py-12 text-center text-slate-400 font-sans italic">
                       Không tìm thấy dữ liệu chấm công cho bộ lọc hiện tại.
                     </td>
                   </tr>
@@ -533,14 +667,14 @@ export default function AccountantView({
                         <td className="border-r border-black text-[10px] text-slate-700">{job.line}</td>
                         <td className="border-r border-black"></td> {/* Empty 'Hãng' column matching image */}
                         <td className="border-r border-black font-bold text-[11px]">{job.size.replace('RF', '')}</td>
-                        
+
                         {/* Dynamic Sub-columns checkmarks */}
-                        {OP_LIST.map((opItem) => {
-                          return SIZE_LIST.map((sizeItem) => {
-                            const isMatched = job.operation === opItem.key && job.size === sizeItem;
+                        {operations.map((op) => {
+                          return sizes.map((size) => {
+                            const isMatched = job.operation === op.code && job.size === size.code;
                             return (
-                              <td 
-                                key={`${opItem.key}-${sizeItem}`} 
+                              <td
+                                key={`${op.code}-${size.code}`}
                                 className={`border-r border-black text-[11px] font-black font-sans ${isMatched ? 'bg-amber-100/50' : ''}`}
                               >
                                 {isMatched ? 'X' : ''}
@@ -558,21 +692,29 @@ export default function AccountantView({
                         <td className="border-l border-black p-1 text-center space-x-1 no-print font-sans">
                           <button
                             onClick={() => handleOpenEditModal(job)}
-                            className="p-1 hover:bg-amber-100 text-amber-700 rounded transition-colors inline-block cursor-pointer"
+                            disabled={isMutating}
+                            className="p-1 hover:bg-amber-100 text-amber-700 rounded transition-colors inline-block cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             title="Sửa thông tin"
                           >
                             <Edit className="w-3.5 h-3.5" />
                           </button>
                           <button
-                            onClick={() => {
+                            onClick={async () => {
+                              if (isMutating) return;
                               if (confirm(`Bạn có chắc muốn xoá công ${job.containerNo}?`)) {
-                                onDeleteJob(job.id);
+                                setDeletingJobId(job.id);
+                                try {
+                                  await onDeleteJob(job.id);
+                                } finally {
+                                  setDeletingJobId(null);
+                                }
                               }
                             }}
-                            className="p-1 hover:bg-red-50 text-red-600 rounded transition-colors inline-block cursor-pointer"
+                            disabled={isMutating}
+                            className="p-1 hover:bg-red-50 text-red-600 rounded transition-colors inline-block cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             title="Xoá dòng"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            {deletingJobId === job.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
                           </button>
                         </td>
                       </tr>
@@ -585,19 +727,19 @@ export default function AccountantView({
                   <td colSpan={6} className="border-r border-black text-right pr-4 font-black">
                     Tổng cộng
                   </td>
-                  
-                  {/* Sum counters for all 36 operation sub-columns */}
-                  {OP_LIST.map((opItem) => {
-                    return SIZE_LIST.map((sizeItem) => {
-                      const colSum = getSubColumnTotal(opItem.key, sizeItem);
+
+                  {/* Sum counters for tất cả cột con operation x size */}
+                  {operations.map((op) => {
+                    return sizes.map((size) => {
+                      const colSum = getSubColumnTotal(op.code, size.code);
                       return (
-                        <td key={`total-${opItem.key}-${sizeItem}`} className="border-r border-black font-black text-black">
+                        <td key={`total-${op.code}-${size.code}`} className="border-r border-black font-black text-black">
                           {colSum > 0 ? colSum : ''}
                         </td>
                       );
                     });
                   })}
-                  
+
                   <td className="border-black"></td> {/* Notes placeholder */}
                   <td className="border-l border-black no-print"></td> {/* Actions placeholder */}
                 </tr>
@@ -619,7 +761,7 @@ export default function AccountantView({
 
             <div className="space-y-16">
               <div>
-                <p className="uppercase tracking-wider">ICD TÂN CẢNG HẢI PHÒNG</p>
+                <p className="uppercase tracking-wider">ICD CÁT LÁI</p>
                 <p className="text-[10px] text-slate-500 font-normal italic">(Ký và ghi rõ họ tên)</p>
               </div>
               <p className="text-sm font-extrabold italic text-slate-400">
@@ -630,6 +772,8 @@ export default function AccountantView({
 
         </div>
       </div>
+      </>
+      )}
 
       {/* 4. Accountant/Admin Add & Edit Dialog (Modal) */}
       {showModal && (
@@ -647,17 +791,19 @@ export default function AccountantView({
             </h3>
 
             <form onSubmit={handleSaveJob} className="space-y-4">
-              {/* Container number */}
+              {/* Container number - không ép định dạng khi đang gõ để tránh vỡ IME tiếng Việt */}
               <div className="space-y-1">
                 <label className="block text-xs font-bold text-slate-700 uppercase">Số hiệu Container *</label>
                 <input
                   type="text"
                   value={formContainerNo}
-                  onChange={(e) => setFormContainerNo(e.target.value.toUpperCase())}
+                  onChange={(e) => setFormContainerNo(e.target.value)}
+                  onBlur={() => setFormContainerNo((v) => v.trim().toUpperCase())}
                   placeholder="Ví dụ: TRHU4320650"
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold uppercase focus:ring-1 focus:ring-emerald-500 focus:outline-none"
                   required
                 />
+                <p className="text-[11px] text-slate-500">Đúng chuẩn: 4 chữ cái + 7 chữ số, ví dụ <span className="font-mono font-bold">TRHU4320650</span></p>
               </div>
 
               {/* Driver */}
@@ -683,7 +829,7 @@ export default function AccountantView({
                     onChange={(e) => setFormLine(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
                   >
-                    {SHIPPING_LINES.map(line => (
+                    {shippingLines.map(line => (
                       <option key={line} value={line}>{line}</option>
                     ))}
                   </select>
@@ -696,12 +842,9 @@ export default function AccountantView({
                     onChange={(e) => setFormSize(e.target.value as ContainerSize)}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
                   >
-                    <option value="20">20</option>
-                    <option value="20RF">20RF</option>
-                    <option value="40">40</option>
-                    <option value="40RF">40RF</option>
-                    <option value="45">45</option>
-                    <option value="45RF">45RF</option>
+                    {sizes.map((s) => (
+                      <option key={s.code} value={s.code}>{s.label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -714,12 +857,9 @@ export default function AccountantView({
                   onChange={(e) => setFormOperation(e.target.value as OperationType)}
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
                 >
-                  <option value="nang_khach_hang">Nâng khách hàng</option>
-                  <option value="ha_khach_hang">Hạ khách hàng</option>
-                  <option value="nhap_tau">Nhập tàu</option>
-                  <option value="xuat_tau">Xuất tàu</option>
-                  <option value="chuyen_bai">Chuyển bãi</option>
-                  <option value="dao_chuyen">Đảo chuyển</option>
+                  {operations.map((op) => (
+                    <option key={op.code} value={op.code}>{op.label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -751,15 +891,18 @@ export default function AccountantView({
                 <button
                   type="button"
                   onClick={() => setShowModal(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-bold hover:bg-slate-50 cursor-pointer"
+                  disabled={isSavingJob}
+                  className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-bold hover:bg-slate-50 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Huỷ bỏ
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold rounded-lg shadow-sm cursor-pointer"
+                  disabled={isSavingJob}
+                  className="flex items-center space-x-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-bold rounded-lg shadow-sm cursor-pointer"
                 >
-                  {isEditing ? 'Cập nhật' : 'Thêm mới'}
+                  {isSavingJob && <Loader2 className="w-4 h-4 animate-spin" />}
+                  <span>{isSavingJob ? (isEditing ? 'Đang cập nhật...' : 'Đang thêm...') : (isEditing ? 'Cập nhật' : 'Thêm mới')}</span>
                 </button>
               </div>
             </form>

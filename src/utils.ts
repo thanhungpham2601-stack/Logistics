@@ -1,38 +1,67 @@
+// Toàn bộ ca làm việc (7h/19h) và ngày làm việc được tính theo giờ Việt Nam
+// (UTC+7) một cách cố định, bất kể múi giờ hệ điều hành/trình duyệt đang xem
+// báo cáo - vì cảng ICD Cát Lái chỉ vận hành theo giờ VN.
+const VN_UTC_OFFSET_HOURS = 7;
+
+function parseDateParts(dateStr: string): { y: number; m: number; d: number } {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return { y, m, d };
+}
+
+/** Epoch ms tương ứng với thời điểm "hour:00" giờ VN của ngày dateStr (+dayOffset ngày). */
+function vnWallClockToUtcMs(dateStr: string, hour: number, dayOffset = 0): number {
+  const { y, m, d } = parseDateParts(dateStr);
+  return Date.UTC(y, m - 1, d + dayOffset, hour - VN_UTC_OFFSET_HOURS, 0, 0);
+}
+
 /**
- * Format timestamp to string like "HH:mm:ss DD/MM/YYYY" or "DD/MM/YYYY"
+ * Format timestamp to string like "HH:mm:ss DD/MM/YYYY", luôn theo giờ Việt Nam.
  */
 export function formatDateTime(isoString: string): string {
   try {
     const d = new Date(isoString);
     if (isNaN(d.getTime())) return isoString;
-    
-    const hh = String(d.getHours()).padStart(2, '0');
-    const mm = String(d.getMinutes()).padStart(2, '0');
-    const ss = String(d.getSeconds()).padStart(2, '0');
-    
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mo = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    
-    return `${hh}:${mm}:${ss} ${dd}/${mo}/${yyyy}`;
+
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: false,
+    }).formatToParts(d);
+
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+    return `${get('hour')}:${get('minute')}:${get('second')} ${get('day')}/${get('month')}/${get('year')}`;
   } catch (e) {
     return isoString;
   }
 }
 
+/** Format thành "DD/MM/YYYY", luôn theo giờ Việt Nam. */
 export function formatDateOnly(isoString: string): string {
   try {
     const d = new Date(isoString);
     if (isNaN(d.getTime())) return isoString;
-    
-    const dd = String(d.getDate()).padStart(2, '0');
-    const mo = String(d.getMonth() + 1).padStart(2, '0');
-    const yyyy = d.getFullYear();
-    
-    return `${dd}/${mo}/${yyyy}`;
+
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      day: '2-digit', month: '2-digit', year: 'numeric',
+    }).formatToParts(d);
+
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00';
+    return `${get('day')}/${get('month')}/${get('year')}`;
   } catch (e) {
     return isoString;
   }
+}
+
+/** Bỏ dấu tiếng Việt để so sánh tìm kiếm không phân biệt dấu (vd: gõ "manh" khớp "Mạnh"). */
+export function stripDiacritics(str: string): string {
+  return str
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase();
 }
 
 /**
@@ -46,50 +75,37 @@ export function validateContainerNumber(num: string): boolean {
 }
 
 /**
- * Check if a date-time falls within a specific shift
- * shiftName: 'day' (07:00 - 19:00) or 'night' (19:00 - 07:00 next day)
+ * Check if a date-time falls within a specific shift (giờ Việt Nam cố định).
+ * filterDateStr là ngày ghi trên báo cáo:
+ *  - 'day'   (ca ngày):  07:00 - 19:00 cùng ngày filterDateStr
+ *  - 'night' (ca đêm):   19:00 ngày hôm trước - 07:00 ngày filterDateStr
+ *    (quy ước: báo cáo "ca đêm ngày X" là ca kết thúc vào sáng ngày X)
+ * filterDateStr format: "YYYY-MM-DD"
  */
 export function isJobInShift(jobDateStr: string, filterDateStr: string, shift: 'day' | 'night' | 'all'): boolean {
   if (shift === 'all') return true;
-  
-  const jobDate = new Date(jobDateStr);
-  const filterDate = new Date(filterDateStr); // Format "YYYY-MM-DD"
-  
-  if (isNaN(jobDate.getTime()) || isNaN(filterDate.getTime())) return true;
-  
-  // Clear times to compare dates
-  const fYear = filterDate.getFullYear();
-  const fMonth = filterDate.getMonth();
-  const fDate = filterDate.getDate();
-  
-  // Shift day: filterDate 07:00:00 to filterDate 19:00:00
-  const dayShiftStart = new Date(fYear, fMonth, fDate, 7, 0, 0);
-  const dayShiftEnd = new Date(fYear, fMonth, fDate, 19, 0, 0);
-  
-  // Shift night: filterDate 19:00:00 to nextDay 07:00:00
-  const nightShiftStart = new Date(fYear, fMonth, fDate, 19, 0, 0);
-  const nightShiftEnd = new Date(fYear, fMonth, fDate + 1, 7, 0, 0);
-  
+
+  const jobMs = new Date(jobDateStr).getTime();
+  if (isNaN(jobMs)) return true;
+
   if (shift === 'day') {
-    return jobDate >= dayShiftStart && jobDate < dayShiftEnd;
+    return jobMs >= vnWallClockToUtcMs(filterDateStr, 7) && jobMs < vnWallClockToUtcMs(filterDateStr, 19);
   } else {
-    return jobDate >= nightShiftStart && jobDate < nightShiftEnd;
+    return jobMs >= vnWallClockToUtcMs(filterDateStr, 19, -1) && jobMs < vnWallClockToUtcMs(filterDateStr, 7);
   }
 }
 
 /**
- * Check if a date-time falls within a from-to date range (inclusive of both full days).
+ * Check if a date-time falls within a from-to date range (giờ Việt Nam cố định,
+ * bao gồm trọn cả 2 ngày đầu-cuối).
  * fromDateStr / toDateStr format: "YYYY-MM-DD"
  */
 export function isJobInDateRange(jobDateStr: string, fromDateStr: string, toDateStr: string): boolean {
-  const jobDate = new Date(jobDateStr);
-  const from = new Date(fromDateStr);
-  const to = new Date(toDateStr);
+  const jobMs = new Date(jobDateStr).getTime();
+  if (isNaN(jobMs)) return true;
 
-  if (isNaN(jobDate.getTime()) || isNaN(from.getTime()) || isNaN(to.getTime())) return true;
+  const rangeStart = vnWallClockToUtcMs(fromDateStr, 0);
+  const rangeEnd = vnWallClockToUtcMs(toDateStr, 0, 1);
 
-  const rangeStart = new Date(from.getFullYear(), from.getMonth(), from.getDate(), 0, 0, 0);
-  const rangeEnd = new Date(to.getFullYear(), to.getMonth(), to.getDate() + 1, 0, 0, 0);
-
-  return jobDate >= rangeStart && jobDate < rangeEnd;
+  return jobMs >= rangeStart && jobMs < rangeEnd;
 }

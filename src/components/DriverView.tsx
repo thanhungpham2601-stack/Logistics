@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { 
-  Truck, Clock, ClipboardList, CheckCircle2, 
-  Trash2, LogOut, ChevronRight, AlertTriangle, 
-  Plus, Check, RotateCw, Settings 
+import {
+  Truck, Clock, ClipboardList, CheckCircle2,
+  Trash2, LogOut, ChevronRight, AlertTriangle,
+  Plus, Check, RotateCw, Settings, Loader2, Info
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver } from '../types';
-import { SHIPPING_LINES } from '../data/mockData';
+import { ContainerSizeRow, OperationTypeRow } from '../lib/supabaseTypes';
 import { formatDateTime, validateContainerNumber } from '../utils';
 
 interface DriverViewProps {
   currentDriver: Driver;
   onLogout: () => void;
   jobs: JobEntry[];
-  onAddJob: (job: Omit<JobEntry, 'id' | 'driverId' | 'driverName'>) => void;
-  onDeleteJob: (jobId: string) => void;
+  shippingLines: string[];
+  sizes: ContainerSizeRow[];
+  operations: OperationTypeRow[];
+  onAddJob: (job: Omit<JobEntry, 'id' | 'driverId' | 'driverName'>) => Promise<void>;
+  onDeleteJob: (jobId: string) => Promise<void>;
 }
 
 const PRESET_NOTES = [
@@ -26,23 +29,51 @@ const PRESET_NOTES = [
   'Công có nước',
 ];
 
-export default function DriverView({ 
-  currentDriver, 
-  onLogout, 
-  jobs, 
-  onAddJob, 
-  onDeleteJob 
+// Icon và bảng màu cho từng loại tác nghiệp - áp dụng vòng lặp theo thứ tự cấu hình
+// trong Thiết Lập Hệ Thống, để tác nghiệp mới thêm sau vẫn có giao diện nhất quán.
+const OP_EMOJI: Record<string, string> = {
+  nang_khach_hang: '🚚',
+  ha_khach_hang: '🏗️',
+  nhap_tau: '🚢',
+  xuat_tau: '🚢',
+  chuyen_bai: '🔄',
+  dao_chuyen: '🔀',
+};
+
+const OP_COLOR_CYCLE = [
+  { border: 'border-emerald-500', text: 'text-emerald-400', shadow: 'shadow-emerald-500/5', chipBg: 'bg-emerald-500/10', chipBorder: 'border-emerald-500/30' },
+  { border: 'border-blue-500', text: 'text-blue-400', shadow: 'shadow-blue-500/5', chipBg: 'bg-blue-500/10', chipBorder: 'border-blue-500/30' },
+  { border: 'border-indigo-500', text: 'text-indigo-400', shadow: 'shadow-indigo-500/5', chipBg: 'bg-indigo-500/10', chipBorder: 'border-indigo-500/30' },
+  { border: 'border-purple-500', text: 'text-purple-400', shadow: 'shadow-purple-500/5', chipBg: 'bg-purple-500/10', chipBorder: 'border-purple-500/30' },
+  { border: 'border-teal-500', text: 'text-teal-400', shadow: 'shadow-teal-500/5', chipBg: 'bg-teal-500/10', chipBorder: 'border-teal-500/30' },
+  { border: 'border-orange-500', text: 'text-orange-400', shadow: 'shadow-orange-500/5', chipBg: 'bg-orange-500/10', chipBorder: 'border-orange-500/30' },
+];
+
+export default function DriverView({
+  currentDriver,
+  onLogout,
+  jobs,
+  shippingLines,
+  sizes,
+  operations,
+  onAddJob,
+  onDeleteJob
 }: DriverViewProps) {
   const [containerNo, setContainerNo] = useState('');
-  const [selectedLine, setSelectedLine] = useState('MAE/MSK');
+  const [selectedLine, setSelectedLine] = useState(shippingLines[0] ?? '');
   const [customLine, setCustomLine] = useState('');
   const [isCustomLineMode, setIsCustomLineMode] = useState(false);
-  const [selectedSize, setSelectedSize] = useState<ContainerSize>('40');
-  const [selectedOperation, setSelectedOperation] = useState<OperationType>('nang_khach_hang');
+  const [selectedSize, setSelectedSize] = useState<ContainerSize>(sizes[0]?.code ?? '');
+  const [selectedOperation, setSelectedOperation] = useState<OperationType>(operations[0]?.code ?? 'nang_khach_hang');
   const [notes, setNotes] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorWarning, setErrorWarning] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const isBusy = isSubmitting || deletingJobId !== null;
+
+  const isContainerValid = validateContainerNumber(containerNo);
 
   // Real-time clock for the driver
   useEffect(() => {
@@ -60,21 +91,16 @@ export default function DriverView({
   todayStart.setHours(0, 0, 0, 0);
   const myTodayJobs = myJobs.filter(j => new Date(j.timestamp) >= todayStart);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    if (!containerNo.trim()) {
-      setErrorWarning('Vui lòng nhập số hiệu container!');
-      return;
-    }
+    if (isBusy) return;
 
     const finalContainerNo = containerNo.trim().toUpperCase();
-    
-    // Validate container syntax
+
+    // Nút đã bị khoá cho tới khi đúng định dạng, đây chỉ là chốt chặn phòng vệ.
     if (!validateContainerNumber(finalContainerNo)) {
-      if (!confirm('Số container có vẻ chưa đúng định dạng chuẩn (ví dụ: TRHU4320650 - 4 chữ, 7 số). Bạn vẫn muốn tiếp tục lưu?')) {
-        return;
-      }
+      setErrorWarning('Số hiệu container chuẩn phải có 4 chữ cái và 7 chữ số (Ví dụ: TRHU4320650).');
+      return;
     }
 
     const finalLine = isCustomLineMode ? customLine.trim().toUpperCase() : selectedLine;
@@ -83,37 +109,43 @@ export default function DriverView({
       return;
     }
 
-    onAddJob({
-      timestamp: new Date().toISOString(),
-      containerNo: finalContainerNo,
-      line: finalLine,
-      size: selectedSize,
-      operation: selectedOperation,
-      notes: notes.trim()
-    });
+    setIsSubmitting(true);
+    try {
+      await onAddJob({
+        timestamp: new Date().toISOString(),
+        containerNo: finalContainerNo,
+        line: finalLine,
+        size: selectedSize,
+        operation: selectedOperation,
+        notes: notes.trim()
+      });
 
-    // Reset Form
-    setContainerNo('');
-    setNotes('');
-    setErrorWarning(null);
-    setSuccessMessage(`Đã chấm công thành công công ${finalContainerNo}!`);
+      // Reset Form
+      setContainerNo('');
+      setNotes('');
+      setErrorWarning(null);
+      setSuccessMessage(`Đã chấm công thành công công ${finalContainerNo}!`);
 
-    // Clear success message after 3s
-    setTimeout(() => {
-      setSuccessMessage(null);
-    }, 4000);
+      // Clear success message after 3s
+      setTimeout(() => {
+        setSuccessMessage(null);
+      }, 4000);
+    } catch (err) {
+      setErrorWarning('Có lỗi khi lưu chấm công, vui lòng thử lại.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
+  // Không ép định dạng/uppercase khi đang gõ - để gõ tự do (kể cả gõ tiếng Việt qua
+  // Unikey/Telex vốn giả lập phím bằng backspace+ký tự, rất dễ vỡ nếu bị ghi đè giữa chừng).
+  // Việc hợp lệ hay không chỉ quyết định nút "Xác nhận chấm công" có bấm được hay không.
   const handleContainerInput = (val: string) => {
-    // Keep uppercase and clean characters
-    const clean = val.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    setContainerNo(clean);
-    
-    if (clean.length > 0 && !validateContainerNumber(clean)) {
-      setErrorWarning('Số hiệu container chuẩn thường có 4 chữ cái và 7 chữ số (Ví dụ: TRHU4320650).');
-    } else {
-      setErrorWarning(null);
-    }
+    setContainerNo(val);
+  };
+
+  const handleContainerBlur = () => {
+    setContainerNo((prev) => prev.trim().toUpperCase());
   };
 
   const selectQuickNote = (note: string) => {
@@ -162,7 +194,7 @@ export default function DriverView({
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-lg w-full mx-auto p-4 space-y-6 pb-24 z-10">
+      <main className="flex-1 max-w-lg sm:max-w-2xl lg:max-w-3xl w-full mx-auto p-4 sm:p-6 space-y-6 pb-24 z-10">
         {/* Driver Dashboard Stats card */}
         <div className="bg-[#131924] rounded-2xl p-4 border border-slate-800/80 shadow-2xl relative overflow-hidden">
           <div className="absolute top-0 right-0 p-8 opacity-5">
@@ -244,8 +276,9 @@ export default function DriverView({
                 type="text"
                 value={containerNo}
                 onChange={(e) => handleContainerInput(e.target.value)}
+                onBlur={handleContainerBlur}
                 placeholder="Ví dụ: TRHU4320650"
-                maxLength={12}
+                maxLength={20}
                 className="w-full bg-[#0b0f19] border-2 border-slate-800 rounded-xl px-4 py-3.5 text-lg font-mono font-bold tracking-widest text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors uppercase"
                 required
               />
@@ -257,6 +290,12 @@ export default function DriverView({
                 </div>
               )}
             </div>
+            <p className={`text-[11px] flex items-center gap-1 ${
+              containerNo && !isContainerValid ? 'text-amber-400' : 'text-slate-500'
+            }`}>
+              <Info className="w-3 h-3 shrink-0" />
+              <span>Đúng chuẩn: 4 chữ cái + 7 chữ số, ví dụ <span className="font-mono font-bold">TRHU4320650</span></span>
+            </p>
           </div>
 
           {/* 2. Container Size */}
@@ -264,19 +303,19 @@ export default function DriverView({
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
               2. Kích Thước (Size)
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['20', '20RF', '40', '40RF', '45', '45RF'] as ContainerSize[]).map((size) => (
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {sizes.map((size) => (
                 <button
-                  key={size}
+                  key={size.code}
                   type="button"
-                  onClick={() => setSelectedSize(size)}
+                  onClick={() => setSelectedSize(size.code)}
                   className={`py-3.5 text-center font-bold font-mono text-sm rounded-xl border-2 transition-all cursor-pointer ${
-                    selectedSize === size
+                    selectedSize === size.code
                       ? 'bg-blue-500/20 border-blue-500 text-blue-400 shadow-md shadow-blue-500/10'
                       : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700 hover:text-slate-300'
                   }`}
                 >
-                  {size}
+                  {size.label}
                 </button>
               ))}
             </div>
@@ -308,7 +347,7 @@ export default function DriverView({
               />
             ) : (
               <div className="grid grid-cols-3 gap-2">
-                {SHIPPING_LINES.slice(0, 6).map((line) => (
+                {shippingLines.slice(0, 6).map((line) => (
                   <button
                     key={line}
                     type="button"
@@ -331,84 +370,25 @@ export default function DriverView({
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
               4. Loại Tác Nghiệp
             </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedOperation('nang_khach_hang')}
-                className={`py-3.5 px-3 text-left font-bold text-xs rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
-                  selectedOperation === 'nang_khach_hang'
-                    ? 'bg-[#0b0f19] border-emerald-500 text-emerald-400 shadow-emerald-500/5'
-                    : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <span className="text-base mb-1">🚚 Nâng KH</span>
-                <span className="text-[10px] text-slate-500 font-medium">Nâng khách hàng</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedOperation('ha_khach_hang')}
-                className={`py-3.5 px-3 text-left font-bold text-xs rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
-                  selectedOperation === 'ha_khach_hang'
-                    ? 'bg-[#0b0f19] border-blue-500 text-blue-400 shadow-blue-500/5'
-                    : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <span className="text-base mb-1">🏗️ Hạ KH</span>
-                <span className="text-[10px] text-slate-500 font-medium">Hạ khách hàng</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedOperation('nhap_tau')}
-                className={`py-3.5 px-3 text-left font-bold text-xs rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
-                  selectedOperation === 'nhap_tau'
-                    ? 'bg-[#0b0f19] border-indigo-500 text-indigo-400 shadow-indigo-500/5'
-                    : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <span className="text-base mb-1">🚢 Nhập tàu</span>
-                <span className="text-[10px] text-slate-500 font-medium">Dỡ công từ tàu xuống bãi</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedOperation('xuat_tau')}
-                className={`py-3.5 px-3 text-left font-bold text-xs rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
-                  selectedOperation === 'xuat_tau'
-                    ? 'bg-[#0b0f19] border-purple-500 text-purple-400 shadow-purple-500/5'
-                    : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <span className="text-base mb-1">🚢 Xuất tàu</span>
-                <span className="text-[10px] text-slate-500 font-medium">Cấp công lên tàu đi</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedOperation('chuyen_bai')}
-                className={`py-3.5 px-3 text-left font-bold text-xs rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
-                  selectedOperation === 'chuyen_bai'
-                    ? 'bg-[#0b0f19] border-teal-500 text-teal-400 shadow-teal-500/5'
-                    : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <span className="text-base mb-1">🔄 Chuyển bãi</span>
-                <span className="text-[10px] text-slate-500 font-medium">Chuyển giữa các ô bãi</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setSelectedOperation('dao_chuyen')}
-                className={`py-3.5 px-3 text-left font-bold text-xs rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
-                  selectedOperation === 'dao_chuyen'
-                    ? 'bg-[#0b0f19] border-orange-500 text-orange-400 shadow-orange-500/5'
-                    : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
-                }`}
-              >
-                <span className="text-base mb-1">🔀 Đảo chuyển</span>
-                <span className="text-[10px] text-slate-500 font-medium">Đảo chuyển nội bộ / KH</span>
-              </button>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {operations.map((op, idx) => {
+                const palette = OP_COLOR_CYCLE[idx % OP_COLOR_CYCLE.length];
+                const isSelected = selectedOperation === op.code;
+                return (
+                  <button
+                    key={op.code}
+                    type="button"
+                    onClick={() => setSelectedOperation(op.code)}
+                    className={`py-3.5 px-3 text-left font-bold text-xs rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
+                      isSelected
+                        ? `bg-[#0b0f19] ${palette.border} ${palette.text} ${palette.shadow}`
+                        : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    <span className="text-base mb-1">{OP_EMOJI[op.code] ?? '📦'} {op.label}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -447,13 +427,14 @@ export default function DriverView({
             </div>
           </div>
 
-          {/* Submit Button */}
+          {/* Submit Button - khoá tới khi số hiệu container đúng chuẩn 4 chữ + 7 số, hoặc khi đang lưu/xoá */}
           <button
             type="submit"
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-base py-4 rounded-xl shadow-lg hover:shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center justify-center space-x-2 mt-2 cursor-pointer"
+            disabled={!isContainerValid || isBusy}
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed disabled:opacity-60 text-white font-extrabold text-base py-4 rounded-xl shadow-lg hover:shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center justify-center space-x-2 mt-2 cursor-pointer"
           >
-            <CheckCircle2 className="w-5.5 h-5.5" />
-            <span>XÁC NHẬN CHẤM CÔNG</span>
+            {isSubmitting ? <Loader2 className="w-5.5 h-5.5 animate-spin" /> : <CheckCircle2 className="w-5.5 h-5.5" />}
+            <span>{isSubmitting ? 'ĐANG LƯU...' : 'XÁC NHẬN CHẤM CÔNG'}</span>
           </button>
         </form>
 
@@ -477,27 +458,10 @@ export default function DriverView({
           ) : (
             <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 divide-y divide-slate-800/40">
               {myJobs.map((job, idx) => {
-                let opStyle = 'text-amber-400 bg-amber-500/10 border-amber-500/30';
-                let opLabel = 'Khác';
-                if (job.operation === 'nang_khach_hang') {
-                  opStyle = 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30';
-                  opLabel = 'Nâng KH';
-                } else if (job.operation === 'ha_khach_hang') {
-                  opStyle = 'text-blue-400 bg-blue-500/10 border-blue-500/30';
-                  opLabel = 'Hạ KH';
-                } else if (job.operation === 'nhap_tau') {
-                  opStyle = 'text-indigo-400 bg-indigo-500/10 border-indigo-500/30';
-                  opLabel = 'Nhập Tàu';
-                } else if (job.operation === 'xuat_tau') {
-                  opStyle = 'text-purple-400 bg-purple-500/10 border-purple-500/30';
-                  opLabel = 'Xuất Tàu';
-                } else if (job.operation === 'chuyen_bai') {
-                  opStyle = 'text-teal-400 bg-teal-500/10 border-teal-500/30';
-                  opLabel = 'Chuyển Bãi';
-                } else if (job.operation === 'dao_chuyen') {
-                  opStyle = 'text-orange-400 bg-orange-500/10 border-orange-500/30';
-                  opLabel = 'Đảo Chuyển';
-                }
+                const opIdx = operations.findIndex((op) => op.code === job.operation);
+                const palette = OP_COLOR_CYCLE[opIdx >= 0 ? opIdx % OP_COLOR_CYCLE.length : 0];
+                const opStyle = `${palette.text} ${palette.chipBg} ${palette.chipBorder}`;
+                const opLabel = operations.find((op) => op.code === job.operation)?.label ?? 'Khác';
 
                 return (
                   <div key={job.id} className="pt-2 pb-2.5 flex items-center justify-between group">
@@ -530,15 +494,22 @@ export default function DriverView({
                     </div>
 
                     <button
-                      onClick={() => {
+                      onClick={async () => {
+                        if (isBusy) return;
                         if (confirm(`Bạn có chắc muốn xoá chấm công công ${job.containerNo}?`)) {
-                          onDeleteJob(job.id);
+                          setDeletingJobId(job.id);
+                          try {
+                            await onDeleteJob(job.id);
+                          } finally {
+                            setDeletingJobId(null);
+                          }
                         }
                       }}
-                      className="p-2 text-slate-500 hover:text-red-400 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+                      disabled={isBusy}
+                      className="p-2 text-slate-500 hover:text-red-400 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                       title="Xoá lượt này"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      {deletingJobId === job.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                     </button>
                   </div>
                 );
@@ -550,7 +521,7 @@ export default function DriverView({
 
       {/* Quick visual footer with brand and status (Subtle & Clean) */}
       <footer className="mt-auto py-5 text-center border-t border-slate-900/60 bg-slate-950/60 text-slate-500 text-[10px] z-10">
-        <p>© 2026 Hệ thống chấm công ICD Tân Cảng Hải Phòng</p>
+        <p>© 2026 Hệ thống chấm công ICD Cát Lái</p>
         <p className="text-[9px] mt-0.5 text-slate-600">Được tối ưu hoá cho thiết bị di động</p>
       </footer>
     </div>

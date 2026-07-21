@@ -4,6 +4,7 @@ import {
   Truck, ShieldCheck, Key, ArrowRight, Anchor, Heart, Search, Loader2,
 } from 'lucide-react';
 import { Account } from '../lib/api';
+import { stripDiacritics } from '../utils';
 
 interface LoginScreenProps {
   accounts: Account[];
@@ -26,10 +27,10 @@ export default function LoginScreen({ accounts, loading, loadError, onLogin }: L
   );
 
   const filteredDrivers = useMemo(() => {
-    const q = driverSearch.trim().toLowerCase();
+    const q = stripDiacritics(driverSearch.trim());
     if (!q) return drivers;
     return drivers.filter(
-      (d) => d.fullName.toLowerCase().includes(q) || d.username.toLowerCase().includes(q)
+      (d) => stripDiacritics(d.fullName).includes(q) || stripDiacritics(d.username).includes(q)
     );
   }, [drivers, driverSearch]);
 
@@ -64,7 +65,7 @@ export default function LoginScreen({ accounts, loading, loadError, onLogin }: L
         </h1>
         <p className="text-xs text-slate-400 font-extrabold uppercase tracking-widest mt-1.5 flex items-center justify-center space-x-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-          <span>ICD TÂN CẢNG HẢI PHÒNG</span>
+          <span>ICD Cát Lái</span>
         </p>
       </header>
 
@@ -252,7 +253,7 @@ export default function LoginScreen({ accounts, loading, loadError, onLogin }: L
 
       <footer className="py-8 text-center border-t border-slate-900/60 bg-slate-950/90 text-slate-500 text-[10px] z-10">
         <p className="flex items-center justify-center space-x-1 font-medium">
-          <span>Phát triển cho ICD Tân Cảng Hải Phòng với</span>
+          <span>Phát triển cho ICD Cát Lái với</span>
           <Heart className="w-3.5 h-3.5 text-red-500 fill-red-500" />
         </p>
         <p className="text-slate-600 mt-1">Dữ liệu được lưu trữ trên Supabase</p>

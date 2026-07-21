@@ -1,214 +1,271 @@
-import React, { useState, useEffect } from 'react';
-import { JobEntry, Driver, UserRole } from './types';
-import { INITIAL_JOBS, SHIFT_DRIVERS } from './data/mockData';
-import RoleSelector from './components/RoleSelector';
+import React, { useEffect, useState } from 'react';
+import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
+import { Driver, JobEntry, UserRole } from './types';
+import LoginScreen from './components/LoginScreen';
 import DriverView from './components/DriverView';
 import AccountantView from './components/AccountantView';
-import { Shield, Eye, Users, RefreshCw } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import {
+  Account,
+  ConfigLists,
+  createAccount,
+  createJob,
+  deleteAccount,
+  deleteJob,
+  fetchAccounts,
+  fetchConfigLists,
+  fetchJobs,
+  fetchOperationRates,
+  setContainerSizeActive,
+  setOperationTypeActive,
+  setShippingLineActive,
+  updateAccount,
+  updateJob,
+  upsertContainerSize,
+  upsertShippingLine,
+} from './lib/api';
+import { OperationRateRow } from './lib/supabaseTypes';
 
-const JOBS_STORAGE_KEY = 'icd_driver_jobs_v1';
-const DRIVERS_STORAGE_KEY = 'icd_drivers_v1';
+const CURRENT_ACCOUNT_KEY = 'icd_current_account_id';
+
+function homePathFor(account: Account): string {
+  return account.role === 'driver' ? '/driver' : '/accountant';
+}
 
 export default function App() {
-  const [jobs, setJobs] = useState<JobEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
-  const [currentRole, setCurrentRole] = useState<UserRole | null>(null);
-  const [currentDriver, setCurrentDriver] = useState<Driver | null>(null);
+  const [jobs, setJobs] = useState<JobEntry[]>([]);
+  const [configLists, setConfigLists] = useState<ConfigLists>({ sizes: [], operations: [], lines: [] });
+  const [rates, setRates] = useState<OperationRateRow[]>([]);
 
-  // Load from local storage or set defaults
+  const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
+  const navigate = useNavigate();
+
+  const loadAll = async () => {
+    const [accountsData, jobsData, configData, ratesData] = await Promise.all([
+      fetchAccounts(),
+      fetchJobs(),
+      fetchConfigLists(),
+      fetchOperationRates(),
+    ]);
+    setAccounts(accountsData);
+    setDrivers(accountsData.filter((a) => a.role === 'driver' && a.isActive).map((a) => ({ id: a.id, name: a.fullName, phone: a.phone, licenseNumber: a.licenseNumber })));
+    setJobs(jobsData);
+    setConfigLists(configData);
+    setRates(ratesData);
+
+    // Restore session (nếu có) trước khi màn hình đầu tiên render, tránh nháy về trang login
+    const savedId = localStorage.getItem(CURRENT_ACCOUNT_KEY);
+    if (savedId) {
+      const restored = accountsData.find((a) => a.id === savedId && a.isActive);
+      if (restored) setCurrentAccount(restored);
+    }
+  };
+
   useEffect(() => {
-    const storedJobs = localStorage.getItem(JOBS_STORAGE_KEY);
-    if (storedJobs) {
-      try {
-        setJobs(JSON.parse(storedJobs));
-      } catch (e) {
-        setJobs(INITIAL_JOBS);
-      }
-    } else {
-      setJobs(INITIAL_JOBS);
-      localStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(INITIAL_JOBS));
-    }
-
-    const storedDrivers = localStorage.getItem(DRIVERS_STORAGE_KEY);
-    if (storedDrivers) {
-      try {
-        setDrivers(JSON.parse(storedDrivers));
-      } catch (e) {
-        setDrivers(SHIFT_DRIVERS);
-      }
-    } else {
-      setDrivers(SHIFT_DRIVERS);
-      localStorage.setItem(DRIVERS_STORAGE_KEY, JSON.stringify(SHIFT_DRIVERS));
-    }
+    loadAll()
+      .catch((err) => setLoadError(err.message ?? String(err)))
+      .finally(() => setLoading(false));
   }, []);
 
-  // Save to localStorage whenever jobs or drivers list changes
-  const saveJobs = (newJobs: JobEntry[]) => {
-    setJobs(newJobs);
-    localStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(newJobs));
+  const refreshJobs = async () => {
+    setJobs(await fetchJobs());
   };
 
-  const saveDrivers = (newDrivers: Driver[]) => {
-    setDrivers(newDrivers);
-    localStorage.setItem(DRIVERS_STORAGE_KEY, JSON.stringify(newDrivers));
+  const refreshAccounts = async () => {
+    const accountsData = await fetchAccounts();
+    setAccounts(accountsData);
+    setDrivers(accountsData.filter((a) => a.role === 'driver' && a.isActive).map((a) => ({ id: a.id, name: a.fullName, phone: a.phone, licenseNumber: a.licenseNumber })));
   };
 
-  // CRUD handlers
-  const handleAddJob = (jobPayload: Omit<JobEntry, 'id' | 'driverId' | 'driverName'>) => {
-    if (!currentDriver) return;
-    
-    const newJob: JobEntry = {
-      ...jobPayload,
-      id: 'job-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
-      driverId: currentDriver.id,
-      driverName: currentDriver.name,
-    };
-
-    const updated = [newJob, ...jobs];
-    saveJobs(updated);
+  const refreshConfig = async () => {
+    setConfigLists(await fetchConfigLists());
   };
 
-  // Add job from Accountant/Admin (who can select ANY driver)
-  const handleAddJobAdmin = (newJob: JobEntry) => {
-    const updated = [newJob, ...jobs];
-    saveJobs(updated);
+  const handleLogin = (account: Account) => {
+    setCurrentAccount(account);
+    localStorage.setItem(CURRENT_ACCOUNT_KEY, account.id);
+    navigate(homePathFor(account), { replace: true });
   };
 
-  const handleUpdateJob = (updatedJob: JobEntry) => {
-    const updated = jobs.map(j => j.id === updatedJob.id ? updatedJob : j);
-    saveJobs(updated);
+  const handleLogout = () => {
+    setCurrentAccount(null);
+    localStorage.removeItem(CURRENT_ACCOUNT_KEY);
+    navigate('/login', { replace: true });
   };
 
-  const handleDeleteJob = (jobId: string) => {
-    const updated = jobs.filter(j => j.id !== jobId);
-    saveJobs(updated);
+  // ===================== Driver job entry =====================
+  const handleAddJob = async (payload: Omit<JobEntry, 'id' | 'driverId' | 'driverName'>) => {
+    if (!currentAccount) return;
+    await createJob({
+      driverId: currentAccount.id,
+      createdBy: currentAccount.id,
+      performedAt: payload.timestamp,
+      containerNo: payload.containerNo,
+      line: payload.line,
+      size: payload.size,
+      operation: payload.operation,
+      notes: payload.notes,
+    });
+    await refreshJobs();
   };
 
-  const handleAddDriver = (name: string) => {
-    const newDriver: Driver = {
-      id: 'driver-' + Date.now(),
-      name,
-    };
-    const updated = [...drivers, newDriver];
-    saveDrivers(updated);
+  // Accountant/Admin adding a job on behalf of any driver
+  const handleAddJobAdmin = async (job: JobEntry) => {
+    if (!currentAccount) return;
+    await createJob({
+      driverId: job.driverId,
+      createdBy: currentAccount.id,
+      performedAt: job.timestamp,
+      containerNo: job.containerNo,
+      line: job.line,
+      size: job.size,
+      operation: job.operation,
+      notes: job.notes,
+    });
+    await refreshJobs();
   };
 
-  // Helper to reset and reload the initial mock data (for testing)
-  const handleResetData = () => {
-    if (confirm('Bạn có chắc chắn muốn đặt lại dữ liệu gốc từ hình mẫu của ICD Tân Cảng Hải Phòng?')) {
-      setJobs(INITIAL_JOBS);
-      setDrivers(SHIFT_DRIVERS);
-      localStorage.setItem(JOBS_STORAGE_KEY, JSON.stringify(INITIAL_JOBS));
-      localStorage.setItem(DRIVERS_STORAGE_KEY, JSON.stringify(SHIFT_DRIVERS));
-      alert('Đã đặt lại dữ liệu thành công!');
-    }
+  const handleUpdateJob = async (job: JobEntry) => {
+    await updateJob(job.id, {
+      driverId: job.driverId,
+      performedAt: job.timestamp,
+      containerNo: job.containerNo,
+      line: job.line,
+      size: job.size,
+      operation: job.operation,
+      notes: job.notes,
+    });
+    await refreshJobs();
   };
+
+  const handleDeleteJob = async (jobId: string) => {
+    await deleteJob(jobId);
+    await refreshJobs();
+  };
+
+  // ===================== Admin: accounts =====================
+  const handleCreateAccount = async (input: { username: string; fullName: string; role: UserRole; phone?: string; licenseNumber?: string }) => {
+    await createAccount(input);
+    await refreshAccounts();
+  };
+
+  const handleToggleAccountActive = async (id: string, isActive: boolean) => {
+    await updateAccount(id, { isActive });
+    await refreshAccounts();
+  };
+
+  const handleDeleteAccount = async (id: string) => {
+    await deleteAccount(id);
+    await refreshAccounts();
+  };
+
+  // ===================== Admin: config lists =====================
+  const handleAddShippingLine = async (code: string, name: string) => {
+    await upsertShippingLine({ code, name });
+    await refreshConfig();
+  };
+
+  const handleToggleShippingLine = async (code: string, isActive: boolean) => {
+    await setShippingLineActive(code, isActive);
+    await refreshConfig();
+  };
+
+  const handleAddContainerSize = async (code: string, label: string) => {
+    await upsertContainerSize({ code, label });
+    await refreshConfig();
+  };
+
+  const handleToggleContainerSize = async (code: string, isActive: boolean) => {
+    await setContainerSizeActive(code, isActive);
+    await refreshConfig();
+  };
+
+  const handleToggleOperationType = async (code: string, isActive: boolean) => {
+    await setOperationTypeActive(code, isActive);
+    await refreshConfig();
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center space-y-3 text-slate-400">
+        <Loader2 className="w-8 h-8 animate-spin" />
+        <p className="text-sm font-bold">Đang tải dữ liệu...</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="relative">
-      
-      {/* 1. Main views based on user state */}
-      {currentRole === null && (
-        <RoleSelector
-          drivers={drivers}
-          onSelectDriver={(driver) => {
-            setCurrentDriver(driver);
-            setCurrentRole('driver');
-          }}
-          onSelectAccountant={() => {
-            setCurrentRole('accountant');
-          }}
-          onAddDriver={handleAddDriver}
-        />
-      )}
+    <Routes>
+      <Route
+        path="/login"
+        element={
+          currentAccount ? (
+            <Navigate to={homePathFor(currentAccount)} replace />
+          ) : (
+            <LoginScreen accounts={accounts} loading={false} loadError={loadError} onLogin={handleLogin} />
+          )
+        }
+      />
 
-      {currentRole === 'driver' && currentDriver && (
-        <DriverView
-          currentDriver={currentDriver}
-          onLogout={() => {
-            setCurrentDriver(null);
-            setCurrentRole(null);
-          }}
-          jobs={jobs}
-          onAddJob={handleAddJob}
-          onDeleteJob={handleDeleteJob}
-        />
-      )}
+      <Route
+        path="/driver"
+        element={
+          currentAccount && currentAccount.role === 'driver' ? (
+            <DriverView
+              currentDriver={{ id: currentAccount.id, name: currentAccount.fullName, phone: currentAccount.phone, licenseNumber: currentAccount.licenseNumber }}
+              onLogout={handleLogout}
+              jobs={jobs}
+              shippingLines={configLists.lines.filter((l) => l.is_active).map((l) => l.code)}
+              sizes={configLists.sizes.filter((s) => s.is_active)}
+              operations={configLists.operations.filter((o) => o.is_active)}
+              onAddJob={handleAddJob}
+              onDeleteJob={handleDeleteJob}
+            />
+          ) : (
+            <Navigate to={currentAccount ? homePathFor(currentAccount) : '/login'} replace />
+          )
+        }
+      />
 
-      {currentRole === 'accountant' && (
-        <AccountantView
-          jobs={jobs}
-          drivers={drivers}
-          onAddJob={handleAddJobAdmin}
-          onUpdateJob={handleUpdateJob}
-          onDeleteJob={handleDeleteJob}
-        />
-      )}
+      <Route
+        path="/accountant/*"
+        element={
+          currentAccount && currentAccount.role !== 'driver' ? (
+            <AccountantView
+              jobs={jobs}
+              drivers={drivers}
+              rates={rates}
+              shippingLines={configLists.lines.filter((l) => l.is_active).map((l) => l.code)}
+              sizes={configLists.sizes.filter((s) => s.is_active)}
+              operations={configLists.operations.filter((o) => o.is_active)}
+              isAdmin={currentAccount.role === 'admin'}
+              onAddJob={handleAddJobAdmin}
+              onUpdateJob={handleUpdateJob}
+              onDeleteJob={handleDeleteJob}
+              onLogout={handleLogout}
+              accounts={accounts}
+              configLists={configLists}
+              onCreateAccount={handleCreateAccount}
+              onToggleAccountActive={handleToggleAccountActive}
+              onDeleteAccount={handleDeleteAccount}
+              onAddShippingLine={handleAddShippingLine}
+              onToggleShippingLine={handleToggleShippingLine}
+              onAddContainerSize={handleAddContainerSize}
+              onToggleContainerSize={handleToggleContainerSize}
+              onToggleOperationType={handleToggleOperationType}
+            />
+          ) : (
+            <Navigate to={currentAccount ? homePathFor(currentAccount) : '/login'} replace />
+          )
+        }
+      />
 
-      {/* 2. Floating Live View Switcher for the demo evaluation (Hidden in Print) */}
-      <div className="fixed bottom-4 left-4 z-50 flex items-center space-x-2 bg-[#0b0f19]/95 hover:bg-[#0b0f19] border border-slate-800 p-2 rounded-xl shadow-2xl text-slate-100 backdrop-blur-md text-xs no-print select-none">
-        <span className="text-[10px] font-black text-slate-400 px-1.5 py-0.5 border border-slate-800/80 rounded bg-slate-900/60">
-          CHẾ ĐỘ XEM THỬ
-        </span>
-        
-        <div className="flex gap-1">
-          <button
-            onClick={() => {
-              setCurrentRole(null);
-              setCurrentDriver(null);
-            }}
-            className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-              currentRole === null 
-                ? 'bg-blue-600 text-white shadow shadow-blue-600/20' 
-                : 'hover:bg-slate-800 text-slate-400 hover:text-white'
-            }`}
-            title="Đến trang Chọn vai trò / Cổng đăng nhập"
-          >
-            Cổng chính
-          </button>
- 
-          <button
-            onClick={() => {
-              // Select Vũ Xuân Tuyên (ID: 1) as current driver
-              const vxTuyen = drivers.find(d => d.id === '1') || drivers[0] || { id: '1', name: 'Vũ Xuân Tuyên' };
-              setCurrentDriver(vxTuyen);
-              setCurrentRole('driver');
-            }}
-            className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-              currentRole === 'driver' 
-                ? 'bg-blue-600 text-white shadow shadow-blue-600/20' 
-                : 'hover:bg-slate-800 text-slate-400 hover:text-white'
-            }`}
-            title="Xem màn hình điện thoại của tài xế Vũ Xuân Tuyên"
-          >
-            Lái xe (Vũ Xuân Tuyên)
-          </button>
- 
-          <button
-            onClick={() => {
-              setCurrentRole('accountant');
-              setCurrentDriver(null);
-            }}
-            className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-              currentRole === 'accountant' 
-                ? 'bg-blue-600 text-white shadow shadow-blue-600/20' 
-                : 'hover:bg-slate-800 text-slate-400 hover:text-white'
-            }`}
-            title="Xem màn hình báo cáo của quản lý, kế toán"
-          >
-            Kế toán & Báo cáo
-          </button>
-        </div>
- 
-        <button
-          onClick={handleResetData}
-          className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors cursor-pointer ml-1"
-          title="Đặt lại dữ liệu gốc mẫu"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-        </button>
-      </div>
-
-    </div>
+      <Route path="*" element={<Navigate to={currentAccount ? homePathFor(currentAccount) : '/login'} replace />} />
+    </Routes>
   );
 }

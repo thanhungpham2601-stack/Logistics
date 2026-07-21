@@ -3,6 +3,7 @@ import { ContainerSize, Driver, JobEntry, OperationType, UserRole } from '../typ
 import {
   ContainerSizeRow,
   JobEntryRow,
+  OperationRateRow,
   OperationTypeRow,
   ProfileRow,
   ShippingLineRow,
@@ -166,6 +167,12 @@ export async function setContainerSizeActive(code: string, isActive: boolean): P
 export async function setOperationTypeActive(code: string, isActive: boolean): Promise<void> {
   const { error } = await supabase.from('operation_types').update({ is_active: isActive }).eq('code', code);
   if (error) throw error;
+}
+
+export async function fetchOperationRates(): Promise<OperationRateRow[]> {
+  const { data, error } = await supabase.from('operation_rates').select('*');
+  if (error) throw error;
+  return data as OperationRateRow[];
 }
 
 // ===================== JOB ENTRIES =====================
