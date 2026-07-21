@@ -1,0 +1,6 @@
+{
+  "name": "Chấm Công Lái Xe",
+  "description": "Ứng dụng chấm công dành cho tài xế và báo cáo ca dành cho quản lý, kế toán.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
