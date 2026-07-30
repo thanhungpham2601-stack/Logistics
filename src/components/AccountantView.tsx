@@ -68,8 +68,8 @@ export default function AccountantView({
   onToggleOperationType
 }: AccountantViewProps) {
   // Filter states - Defaulting to matching the screenshot date and shift
-  const [filterDate, setFilterDate] = useState('2026-07-20');
-  const [filterToDate, setFilterToDate] = useState('2026-07-20'); // Khi khác filterDate -> chế độ xem khoảng ngày
+  const [filterDate, setFilterDate] = useState('2026-07-19');
+  const [filterToDate, setFilterToDate] = useState('2026-07-19'); // Khi khác filterDate -> chế độ xem khoảng ngày
   const [filterShift, setFilterShift] = useState<'day' | 'night' | 'all'>('night');
   const [filterDriver, setFilterDriver] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -223,14 +223,14 @@ export default function AccountantView({
       return `Báo cáo từ ${formattedDate} đến ${formatDateOnly(filterToDate)}`;
     }
 
-    // Split date to calculate previous day if night shift
-    const fDateObj = new Date(filterDate);
-    const prevDateObj = new Date(fDateObj);
-    prevDateObj.setDate(prevDateObj.getDate() - 1);
-    const formattedPrevDate = formatDateOnly(prevDateObj.toISOString());
+    // Ca đêm bắt đầu tối filterDate, kết thúc sáng ngày kế tiếp.
+    // Neo vào 12:00 UTC (= 19:00 giờ VN) để cộng ngày an toàn, tránh lệch múi giờ.
+    const nextDateObj = new Date(`${filterDate}T12:00:00Z`);
+    nextDateObj.setUTCDate(nextDateObj.getUTCDate() + 1);
+    const formattedNextDate = formatDateOnly(nextDateObj.toISOString());
 
     if (filterShift === 'night') {
-      return `Ca đêm 19:00 ${formattedPrevDate} - 07:00 ${formattedDate}`;
+      return `Ca đêm 19:00 ${formattedDate} - 07:00 ${formattedNextDate}`;
     } else if (filterShift === 'day') {
       return `Ca ngày 07:00 ${formattedDate} - 19:00 ${formattedDate}`;
     } else {
@@ -390,9 +390,6 @@ export default function AccountantView({
               >
                 <Menu className="w-5 h-5" />
               </button>
-              <span className="bg-blue-50 border border-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-                Kế toán & Quản trị viên
-              </span>
               <h1 className="text-xl md:text-2xl font-black text-slate-900 mt-1.5 flex items-center space-x-2">
                 {activeTab === 'settings' ? <Settings className="w-7 h-7 text-blue-600" /> : <FileSpreadsheet className="w-7 h-7 text-blue-600" />}
                 <span>

@@ -78,8 +78,8 @@ export function validateContainerNumber(num: string): boolean {
  * Check if a date-time falls within a specific shift (giờ Việt Nam cố định).
  * filterDateStr là ngày ghi trên báo cáo:
  *  - 'day'   (ca ngày):  07:00 - 19:00 cùng ngày filterDateStr
- *  - 'night' (ca đêm):   19:00 ngày hôm trước - 07:00 ngày filterDateStr
- *    (quy ước: báo cáo "ca đêm ngày X" là ca kết thúc vào sáng ngày X)
+ *  - 'night' (ca đêm):   19:00 ngày filterDateStr - 07:00 ngày kế tiếp
+ *    (quy ước: báo cáo "ca đêm ngày X" là ca bắt đầu từ tối ngày X)
  * filterDateStr format: "YYYY-MM-DD"
  */
 export function isJobInShift(jobDateStr: string, filterDateStr: string, shift: 'day' | 'night' | 'all'): boolean {
@@ -91,7 +91,7 @@ export function isJobInShift(jobDateStr: string, filterDateStr: string, shift: '
   if (shift === 'day') {
     return jobMs >= vnWallClockToUtcMs(filterDateStr, 7) && jobMs < vnWallClockToUtcMs(filterDateStr, 19);
   } else {
-    return jobMs >= vnWallClockToUtcMs(filterDateStr, 19, -1) && jobMs < vnWallClockToUtcMs(filterDateStr, 7);
+    return jobMs >= vnWallClockToUtcMs(filterDateStr, 19) && jobMs < vnWallClockToUtcMs(filterDateStr, 7, 1);
   }
 }
 
