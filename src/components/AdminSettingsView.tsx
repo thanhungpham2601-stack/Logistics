@@ -114,7 +114,7 @@ export default function AdminSettingsView({
 
   return (
     <div className="flex-1 p-6 overflow-auto">
-      <div className="max-w-5xl mx-auto space-y-6">
+      <div className="space-y-6">
         {/* Tabs */}
         <div className="flex gap-2 border-b border-slate-200">
           <button

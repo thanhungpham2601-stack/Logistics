@@ -291,7 +291,7 @@ export default function AccountantView({
               {!sidebarCollapsed && (
                 <div>
                   <h2 className="text-sm font-black tracking-wider uppercase text-white">VẬN TẢI PRO</h2>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">ICD Hải Phòng</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">ICD Cát Lái</p>
                 </div>
               )}
             </div>
