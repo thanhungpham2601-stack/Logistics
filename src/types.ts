@@ -12,6 +12,11 @@ export type OperationType =
 
 export type UserRole = 'driver' | 'accountant' | 'admin';
 
+export type Shift = 'day' | 'night';
+
+// Container rỗng hay có hàng - phục vụ báo cáo tổng hợp đảo chuyển (tách 2 khối rỗng/hàng)
+export type CargoStatus = 'rong' | 'hang';
+
 export interface Driver {
   id: string;
   name: string;
@@ -24,10 +29,13 @@ export interface JobEntry {
   driverId: string;
   driverName: string;
   timestamp: string; // ISO or formatted date string "HH:mm:ss DD/MM/YYYY"
+  shift: Shift;
   containerNo: string; // e.g., TRHU432065
   line: string; // e.g., MAE/MSK, MSC, SITC, IAL
   size: ContainerSize;
   operation: OperationType;
+  cargoStatus: CargoStatus;
+  subType?: string; // Phân loại đảo chuyển (khach_hang, xuat_tau, sua_chua, don_bai, giam_dinh) - chỉ áp dụng cho operation = dao_chuyen
   notes?: string;
 }
 

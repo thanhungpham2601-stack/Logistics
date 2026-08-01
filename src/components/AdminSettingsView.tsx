@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   Users, Plus, Trash2, Calculator,
   Ship, Ruler, Wrench, Check, X, Loader2,
+  MessageSquareText, Repeat, Mail, Pencil,
 } from 'lucide-react';
 import { Account, ConfigLists } from '../lib/api';
 import { UserRole } from '../types';
@@ -9,14 +10,21 @@ import { UserRole } from '../types';
 interface AdminSettingsViewProps {
   accounts: Account[];
   configLists: ConfigLists;
-  onCreateAccount: (input: { username: string; fullName: string; role: UserRole; phone?: string; licenseNumber?: string }) => Promise<void>;
+  onCreateAccount: (input: { username: string; fullName: string; role: UserRole; phone?: string; email?: string }) => Promise<void>;
   onToggleAccountActive: (id: string, isActive: boolean) => Promise<void>;
   onDeleteAccount: (id: string) => Promise<void>;
+  onUpdateAccountEmail: (id: string, email: string) => Promise<void>;
   onAddShippingLine: (code: string, name: string) => Promise<void>;
   onToggleShippingLine: (code: string, isActive: boolean) => Promise<void>;
   onAddContainerSize: (code: string, label: string) => Promise<void>;
   onToggleContainerSize: (code: string, isActive: boolean) => Promise<void>;
   onToggleOperationType: (code: string, isActive: boolean) => Promise<void>;
+  onAddOperationType: (code: string, label: string) => Promise<void>;
+  onAddDaoChuyenSubtype: (code: string, label: string) => Promise<void>;
+  onToggleDaoChuyenSubtype: (code: string, isActive: boolean) => Promise<void>;
+  onAddNotePreset: (label: string) => Promise<void>;
+  onToggleNotePreset: (id: string, isActive: boolean) => Promise<void>;
+  onDeleteNotePreset: (id: string) => Promise<void>;
 }
 
 const ROLE_LABEL: Record<UserRole, string> = {
@@ -31,11 +39,18 @@ export default function AdminSettingsView({
   onCreateAccount,
   onToggleAccountActive,
   onDeleteAccount,
+  onUpdateAccountEmail,
   onAddShippingLine,
   onToggleShippingLine,
   onAddContainerSize,
   onToggleContainerSize,
   onToggleOperationType,
+  onAddOperationType,
+  onAddDaoChuyenSubtype,
+  onToggleDaoChuyenSubtype,
+  onAddNotePreset,
+  onToggleNotePreset,
+  onDeleteNotePreset,
 }: AdminSettingsViewProps) {
   const [tab, setTab] = useState<'users' | 'config'>('users');
   const [busy, setBusy] = useState(false);
@@ -59,12 +74,22 @@ export default function AdminSettingsView({
   const [newFullName, setNewFullName] = useState('');
   const [newRole, setNewRole] = useState<UserRole>('driver');
   const [newPhone, setNewPhone] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+
+  // Sửa email (Gmail) cho tài khoản đã tồn tại - cần cho đăng nhập Google (chế độ real)
+  const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
+  const [editingEmailValue, setEditingEmailValue] = useState('');
 
   // New config item forms
   const [newLineCode, setNewLineCode] = useState('');
   const [newLineName, setNewLineName] = useState('');
   const [newSizeCode, setNewSizeCode] = useState('');
   const [newSizeLabel, setNewSizeLabel] = useState('');
+  const [newOpCode, setNewOpCode] = useState('');
+  const [newOpLabel, setNewOpLabel] = useState('');
+  const [newSubtypeCode, setNewSubtypeCode] = useState('');
+  const [newSubtypeLabel, setNewSubtypeLabel] = useState('');
+  const [newNoteLabel, setNewNoteLabel] = useState('');
 
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,11 +101,24 @@ export default function AdminSettingsView({
         fullName: newFullName.trim(),
         role: newRole,
         phone: newPhone.trim() || undefined,
+        email: newEmail.trim() || undefined,
       });
       setNewUsername('');
       setNewFullName('');
       setNewPhone('');
+      setNewEmail('');
       setNewRole('driver');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSaveEmail = async (id: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onUpdateAccountEmail(id, editingEmailValue.trim());
+      setEditingEmailId(null);
     } finally {
       setBusy(false);
     }
@@ -107,6 +145,44 @@ export default function AdminSettingsView({
       await onAddContainerSize(newSizeCode.trim().toUpperCase(), newSizeLabel.trim());
       setNewSizeCode('');
       setNewSizeLabel('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddOperationType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newOpCode.trim() || !newOpLabel.trim()) return;
+    setBusy(true);
+    try {
+      await onAddOperationType(newOpCode.trim().toLowerCase().replace(/\s+/g, '_'), newOpLabel.trim());
+      setNewOpCode('');
+      setNewOpLabel('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddSubtype = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSubtypeCode.trim() || !newSubtypeLabel.trim()) return;
+    setBusy(true);
+    try {
+      await onAddDaoChuyenSubtype(newSubtypeCode.trim().toLowerCase().replace(/\s+/g, '_'), newSubtypeLabel.trim());
+      setNewSubtypeCode('');
+      setNewSubtypeLabel('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newNoteLabel.trim()) return;
+    setBusy(true);
+    try {
+      await onAddNotePreset(newNoteLabel.trim());
+      setNewNoteLabel('');
     } finally {
       setBusy(false);
     }
@@ -140,7 +216,7 @@ export default function AdminSettingsView({
         {tab === 'users' && (
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-6">
             {/* Add user form */}
-            <form onSubmit={handleCreateAccount} className="grid md:grid-cols-5 gap-3 items-end bg-slate-50 border border-slate-200 rounded-xl p-4">
+            <form onSubmit={handleCreateAccount} className="grid md:grid-cols-6 gap-3 items-end bg-slate-50 border border-slate-200 rounded-xl p-4">
               <div className="space-y-1">
                 <label className="block text-[10px] font-bold text-slate-500 uppercase">Tài khoản (username)</label>
                 <input
@@ -182,6 +258,16 @@ export default function AdminSettingsView({
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
                 />
               </div>
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase">Email Gmail (đăng nhập thật)</label>
+                <input
+                  type="email"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  placeholder="ten@gmail.com"
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+              </div>
               <button
                 type="submit"
                 disabled={busy}
@@ -201,6 +287,7 @@ export default function AdminSettingsView({
                     <th className="py-2 pr-2">Tài khoản</th>
                     <th className="py-2 pr-2">Vai trò</th>
                     <th className="py-2 pr-2">SĐT</th>
+                    <th className="py-2 pr-2">Email Gmail</th>
                     <th className="py-2 pr-2">Trạng thái</th>
                     <th className="py-2 pr-2 text-right">Thao tác</th>
                   </tr>
@@ -219,6 +306,44 @@ export default function AdminSettingsView({
                         </span>
                       </td>
                       <td className="py-2 pr-2 text-slate-500">{a.phone || '-'}</td>
+                      <td className="py-2 pr-2">
+                        {editingEmailId === a.id ? (
+                          <div className="flex items-center gap-1">
+                            <input
+                              autoFocus
+                              type="email"
+                              value={editingEmailValue}
+                              onChange={(e) => setEditingEmailValue(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSaveEmail(a.id)}
+                              placeholder="ten@gmail.com"
+                              className="border border-slate-300 rounded-lg px-2 py-1 text-xs w-40 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                            />
+                            <button
+                              onClick={() => handleSaveEmail(a.id)}
+                              disabled={busy}
+                              className="text-emerald-600 cursor-pointer disabled:opacity-40"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setEditingEmailId(null)} className="text-slate-400 cursor-pointer">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setEditingEmailId(a.id);
+                              setEditingEmailValue(a.email ?? '');
+                            }}
+                            className="flex items-center gap-1.5 text-xs text-slate-600 hover:text-emerald-700 cursor-pointer group"
+                            title="Sửa email"
+                          >
+                            <Mail className="w-3.5 h-3.5 text-slate-400 group-hover:text-emerald-600" />
+                            <span className={a.email ? '' : 'italic text-slate-400'}>{a.email || 'Chưa gán'}</span>
+                            <Pencil className="w-3 h-3 text-slate-300 group-hover:text-emerald-600" />
+                          </button>
+                        )}
+                      </td>
                       <td className="py-2 pr-2">
                         <button
                           onClick={() => runAction(`acc-${a.id}`, () => onToggleAccountActive(a.id, !a.isActive))}
@@ -340,7 +465,23 @@ export default function AdminSettingsView({
                 <Calculator className="w-4 h-4 text-purple-500" />
                 <span>Loại Tác Nghiệp</span>
               </h3>
-              <p className="text-[10px] text-slate-400 italic">Danh sách tác nghiệp cố định theo quy trình cảng, chỉ có thể bật/tắt.</p>
+              <form onSubmit={handleAddOperationType} className="flex gap-1.5">
+                <input
+                  value={newOpCode}
+                  onChange={(e) => setNewOpCode(e.target.value)}
+                  placeholder="Mã (vd: sua_chua)"
+                  className="w-1/2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                />
+                <input
+                  value={newOpLabel}
+                  onChange={(e) => setNewOpLabel(e.target.value)}
+                  placeholder="Tên hiển thị"
+                  className="w-1/2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                />
+                <button type="submit" disabled={busy} className="p-1.5 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg cursor-pointer">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </form>
               <div className="space-y-1 max-h-64 overflow-y-auto">
                 {configLists.operations.map((o) => (
                   <div key={o.code} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2 py-1.5">
@@ -352,6 +493,87 @@ export default function AdminSettingsView({
                     >
                       {activeKey === `op-${o.code}` ? <Loader2 className="w-4 h-4 animate-spin" /> : o.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                     </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Dao chuyen subtypes */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 space-y-3">
+              <h3 className="text-xs font-black uppercase text-slate-500 flex items-center space-x-1.5">
+                <Repeat className="w-4 h-4 text-orange-500" />
+                <span>Phân Loại Đảo Chuyển</span>
+              </h3>
+              <form onSubmit={handleAddSubtype} className="flex gap-1.5">
+                <input
+                  value={newSubtypeCode}
+                  onChange={(e) => setNewSubtypeCode(e.target.value)}
+                  placeholder="Mã (vd: kiem_dinh)"
+                  className="w-1/2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                />
+                <input
+                  value={newSubtypeLabel}
+                  onChange={(e) => setNewSubtypeLabel(e.target.value)}
+                  placeholder="Tên hiển thị"
+                  className="w-1/2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                />
+                <button type="submit" disabled={busy} className="p-1.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg cursor-pointer">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </form>
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {configLists.daoChuyenSubtypes.map((st) => (
+                  <div key={st.code} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2 py-1.5">
+                    <span className="font-bold text-slate-700">{st.label}</span>
+                    <button
+                      onClick={() => runAction(`subtype-${st.code}`, () => onToggleDaoChuyenSubtype(st.code, !st.is_active))}
+                      disabled={busy}
+                      className={`cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${st.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
+                    >
+                      {activeKey === `subtype-${st.code}` ? <Loader2 className="w-4 h-4 animate-spin" /> : st.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Note presets */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 space-y-3">
+              <h3 className="text-xs font-black uppercase text-slate-500 flex items-center space-x-1.5">
+                <MessageSquareText className="w-4 h-4 text-teal-500" />
+                <span>Ghi Chú Gợi Ý</span>
+              </h3>
+              <form onSubmit={handleAddNote} className="flex gap-1.5">
+                <input
+                  value={newNoteLabel}
+                  onChange={(e) => setNewNoteLabel(e.target.value)}
+                  placeholder="Nội dung ghi chú gợi ý"
+                  className="flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                />
+                <button type="submit" disabled={busy} className="p-1.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg cursor-pointer">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </form>
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {configLists.notePresets.map((n) => (
+                  <div key={n.id} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2 py-1.5">
+                    <span className="font-bold text-slate-700">{n.label}</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => runAction(`note-${n.id}`, () => onToggleNotePreset(n.id, !n.is_active))}
+                        disabled={busy}
+                        className={`cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${n.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
+                      >
+                        {activeKey === `note-${n.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : n.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                      </button>
+                      <button
+                        onClick={() => runAction(`del-note-${n.id}`, () => onDeleteNotePreset(n.id))}
+                        disabled={busy}
+                        className="text-red-500 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                      >
+                        {activeKey === `del-note-${n.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
-  Truck, ShieldCheck, Key, ArrowRight, Anchor, Heart, Search, Loader2,
+  Truck, ShieldCheck, Key, ArrowRight, Anchor, Heart, Search, Loader2, ArrowLeft,
 } from 'lucide-react';
 import { Account } from '../lib/api';
 import { stripDiacritics } from '../utils';
@@ -11,9 +11,10 @@ interface LoginScreenProps {
   loading: boolean;
   loadError: string | null;
   onLogin: (account: Account) => void;
+  onBack?: () => void;
 }
 
-export default function LoginScreen({ accounts, loading, loadError, onLogin }: LoginScreenProps) {
+export default function LoginScreen({ accounts, loading, loadError, onLogin, onBack }: LoginScreenProps) {
   const [driverSearch, setDriverSearch] = useState('');
   const [selectedStaffId, setSelectedStaffId] = useState('');
   const [staffPassword, setStaffPassword] = useState('');
@@ -56,16 +57,25 @@ export default function LoginScreen({ accounts, loading, loadError, onLogin }: L
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px]" />
       <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[120px]" />
 
-      <header className="pt-12 px-4 text-center z-10">
+      <header className="pt-12 px-4 text-center z-10 relative">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="absolute left-4 top-12 flex items-center gap-1.5 text-xs font-bold text-slate-400 hover:text-white bg-slate-900/80 border border-slate-800 px-3 py-2 rounded-xl cursor-pointer transition-colors"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span>Quay lại</span>
+          </button>
+        )}
         <div className="inline-flex items-center justify-center p-4 bg-slate-900/90 border border-slate-800 rounded-2xl mb-4 shadow-2xl transition-all hover:scale-105 duration-300">
           <Anchor className="w-10 h-10 text-blue-500 animate-pulse" />
         </div>
-        <h1 className="text-2xl sm:text-3xl font-black tracking-wider uppercase bg-gradient-to-r from-blue-400 via-indigo-200 to-emerald-400 bg-clip-text text-transparent drop-shadow-sm">
+        <h1 className="text-2xl sm:text-3xl font-black tracking-wider uppercase text-blue-300 drop-shadow-sm">
           Cổng Chấm Công & Quản Lý Ca
         </h1>
         <p className="text-xs text-slate-400 font-extrabold uppercase tracking-widest mt-1.5 flex items-center justify-center space-x-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-          <span>ICD Cát Lái</span>
+          <span>ICD AN GIA</span>
         </p>
       </header>
 
@@ -253,8 +263,7 @@ export default function LoginScreen({ accounts, loading, loadError, onLogin }: L
 
       <footer className="py-8 text-center border-t border-slate-900/60 bg-slate-950/90 text-slate-500 text-[10px] z-10">
         <p className="flex items-center justify-center space-x-1 font-medium">
-          <span>Phát triển cho ICD Cát Lái với</span>
-          <Heart className="w-3.5 h-3.5 text-red-500 fill-red-500" />
+          <span>Phát triển cho ICD AN GIA</span>
         </p>
         <p className="text-slate-600 mt-1">Dữ liệu được lưu trữ trên Supabase</p>
       </footer>

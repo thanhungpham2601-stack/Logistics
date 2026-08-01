@@ -1,21 +1,25 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import {
   FileSpreadsheet, Printer, Download, Plus,
-  Trash2, Edit, Filter,
+  Trash2, Edit,
   TrendingUp, Search, X,
   Anchor,
   Settings, LogOut, Calculator,
-  ChevronsLeft, ChevronsRight, Menu, Loader2
+  ChevronsLeft, ChevronsRight, Menu, Loader2,
+  ArrowUpDown, Repeat, Users, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
-import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics } from '../utils';
-import { ContainerSizeRow, OperationRateRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { Account, ConfigLists } from '../lib/api';
+import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN } from '../utils';
+import { ContainerSizeRow, OperationRateRow, OperationTypeRow, ReconciliationReportType, ReportReconciliationRow } from '../lib/supabaseTypes';
+import { Account, ConfigLists, fetchJobsPage, fetchReconciliations, upsertReconciliation } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
+import { SummaryColumnBlock, SummaryRowGroup } from '../lib/reportMatrix';
 import AccountingReportPanel from './AccountingReportPanel';
 import AdminSettingsView from './AdminSettingsView';
+import OperationSummaryReport from './OperationSummaryReport';
+import DriverProductionReport from './DriverProductionReport';
 import SearchableSelect from './SearchableSelect';
 import DateRangePicker from './DateRangePicker';
 
@@ -34,14 +38,21 @@ interface AccountantViewProps {
   // Admin settings (only rendered when isAdmin)
   accounts: Account[];
   configLists: ConfigLists;
-  onCreateAccount: (input: { username: string; fullName: string; role: UserRole; phone?: string; licenseNumber?: string }) => Promise<void>;
+  onCreateAccount: (input: { username: string; fullName: string; role: UserRole; phone?: string; licenseNumber?: string; email?: string }) => Promise<void>;
   onToggleAccountActive: (id: string, isActive: boolean) => Promise<void>;
   onDeleteAccount: (id: string) => Promise<void>;
+  onUpdateAccountEmail: (id: string, email: string) => Promise<void>;
   onAddShippingLine: (code: string, name: string) => Promise<void>;
   onToggleShippingLine: (code: string, isActive: boolean) => Promise<void>;
   onAddContainerSize: (code: string, label: string) => Promise<void>;
   onToggleContainerSize: (code: string, isActive: boolean) => Promise<void>;
   onToggleOperationType: (code: string, isActive: boolean) => Promise<void>;
+  onAddOperationType: (code: string, label: string) => Promise<void>;
+  onAddDaoChuyenSubtype: (code: string, label: string) => Promise<void>;
+  onToggleDaoChuyenSubtype: (code: string, isActive: boolean) => Promise<void>;
+  onAddNotePreset: (label: string) => Promise<void>;
+  onToggleNotePreset: (id: string, isActive: boolean) => Promise<void>;
+  onDeleteNotePreset: (id: string) => Promise<void>;
 }
 
 export default function AccountantView({
@@ -61,32 +72,54 @@ export default function AccountantView({
   onCreateAccount,
   onToggleAccountActive,
   onDeleteAccount,
+  onUpdateAccountEmail,
   onAddShippingLine,
   onToggleShippingLine,
   onAddContainerSize,
   onToggleContainerSize,
-  onToggleOperationType
+  onToggleOperationType,
+  onAddOperationType,
+  onAddDaoChuyenSubtype,
+  onToggleDaoChuyenSubtype,
+  onAddNotePreset,
+  onToggleNotePreset,
+  onDeleteNotePreset
 }: AccountantViewProps) {
-  // Filter states - Defaulting to matching the screenshot date and shift
-  const [filterDate, setFilterDate] = useState('2026-07-19');
-  const [filterToDate, setFilterToDate] = useState('2026-07-19'); // Khi khác filterDate -> chế độ xem khoảng ngày
-  const [filterShift, setFilterShift] = useState<'day' | 'night' | 'all'>('night');
+  // Filter states - mặc định ngày hiện tại (giờ VN)
+  const [filterDate, setFilterDate] = useState(todayVN());
+  const [filterToDate, setFilterToDate] = useState(todayVN()); // Khi khác filterDate -> chế độ xem khoảng ngày
+  const [filterShift, setFilterShift] = useState<'day' | 'night'>('night');
   const [filterDriver, setFilterDriver] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
-  // Mỗi tab có URL riêng: /accountant, /accountant/report, /accountant/settings
+  // Mỗi tab có URL riêng: /accountant, /accountant/report, /accountant/theo-tai-xe, /accountant/nang-ha, /accountant/dao-chuyen, /accountant/settings
+  type AccountantTab = 'dashboard' | 'report' | 'driver' | 'nang_ha' | 'dao_chuyen' | 'settings';
   const location = useLocation();
   const navigate = useNavigate();
-  const urlTab: 'dashboard' | 'report' | 'settings' = location.pathname.endsWith('/settings')
+  const urlTab: AccountantTab = location.pathname.endsWith('/settings')
     ? 'settings'
     : location.pathname.endsWith('/report')
     ? 'report'
+    : location.pathname.endsWith('/theo-tai-xe')
+    ? 'driver'
+    : location.pathname.endsWith('/nang-ha')
+    ? 'nang_ha'
+    : location.pathname.endsWith('/dao-chuyen')
+    ? 'dao_chuyen'
     : 'dashboard';
   const activeTab = urlTab === 'settings' && !isAdmin ? 'dashboard' : urlTab;
-  const setActiveTab = (tab: 'dashboard' | 'report' | 'settings') => {
-    navigate(tab === 'dashboard' ? '/accountant' : `/accountant/${tab}`);
+  const setActiveTab = (tab: AccountantTab) => {
+    const path: Record<AccountantTab, string> = {
+      dashboard: '/accountant',
+      report: '/accountant/report',
+      driver: '/accountant/theo-tai-xe',
+      nang_ha: '/accountant/nang-ha',
+      dao_chuyen: '/accountant/dao-chuyen',
+      settings: '/accountant/settings',
+    };
+    navigate(path[tab]);
   };
 
   const isRangeMode = filterToDate !== filterDate;
@@ -108,6 +141,9 @@ export default function AccountantView({
   const [formLine, setFormLine] = useState('');
   const [formSize, setFormSize] = useState<ContainerSize>('');
   const [formOperation, setFormOperation] = useState<OperationType>('nang_khach_hang');
+  const [formShift, setFormShift] = useState<'day' | 'night'>('day');
+  const [formCargoStatus, setFormCargoStatus] = useState<'rong' | 'hang'>('hang');
+  const [formSubType, setFormSubType] = useState<string>('');
   const [formNotes, setFormNotes] = useState('');
   const [formTime, setFormTime] = useState('');
 
@@ -138,6 +174,48 @@ export default function AccountantView({
     })
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()); // Ascending order like the sheet
 
+  // ===================== Phân trang Danh Sách Sản Lượng (20 dòng/trang) =====================
+  // Khi KHÔNG có từ khoá tìm kiếm: gọi API tải đúng 1 trang (.range) mỗi khi đổi trang/bộ lọc.
+  // Khi CÓ từ khoá tìm kiếm: filteredJobs (đã lọc theo search không phân biệt dấu ở client)
+  // đóng vai trò tập kết quả, phân trang ngay trên tập đó - tránh phải đẩy logic tìm kiếm
+  // không phân biệt dấu xuống SQL.
+  const DASHBOARD_PAGE_SIZE = 20;
+  const [dashboardPage, setDashboardPage] = useState(0);
+  const [pagedJobs, setPagedJobs] = useState<JobEntry[]>([]);
+  const [pagedTotal, setPagedTotal] = useState(0);
+  const [pagedLoading, setPagedLoading] = useState(false);
+
+  useEffect(() => {
+    setDashboardPage(0);
+  }, [filterDate, filterToDate, filterShift, filterDriver, searchQuery, activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'dashboard' || searchQuery) return;
+    let cancelled = false;
+    setPagedLoading(true);
+    const range = isRangeMode ? getDateRangeUtc(filterDate, filterToDate) : getShiftUtcRange(filterDate, filterShift);
+    fetchJobsPage({ from: range.from, to: range.to, driverId: filterDriver, page: dashboardPage, pageSize: DASHBOARD_PAGE_SIZE })
+      .then((res) => {
+        if (cancelled) return;
+        setPagedJobs(res.jobs);
+        setPagedTotal(res.total);
+        const maxPage = Math.max(0, Math.ceil(res.total / DASHBOARD_PAGE_SIZE) - 1);
+        if (dashboardPage > maxPage) setDashboardPage(maxPage);
+      })
+      .finally(() => {
+        if (!cancelled) setPagedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, searchQuery, isRangeMode, filterDate, filterToDate, filterShift, filterDriver, dashboardPage, jobs]);
+
+  const dashboardRows = searchQuery
+    ? filteredJobs.slice(dashboardPage * DASHBOARD_PAGE_SIZE, dashboardPage * DASHBOARD_PAGE_SIZE + DASHBOARD_PAGE_SIZE)
+    : pagedJobs;
+  const dashboardTotal = searchQuery ? filteredJobs.length : pagedTotal;
+  const dashboardTotalPages = Math.max(1, Math.ceil(dashboardTotal / DASHBOARD_PAGE_SIZE));
+
   // Total container count
   const totalCount = filteredJobs.length;
   const count20s = filteredJobs.filter(j => j.size.startsWith('20')).length;
@@ -151,13 +229,16 @@ export default function AccountantView({
     setFormLine(shippingLines[0] ?? '');
     setFormSize(sizes[0]?.code ?? '');
     setFormOperation(operations[0]?.code ?? 'nang_khach_hang');
+    setFormShift(filterShift === 'night' ? 'night' : 'day');
+    setFormCargoStatus('hang');
+    setFormSubType(configLists.daoChuyenSubtypes[0]?.code ?? '');
     setFormNotes('');
-    
+
     // Set default current date/time in local timezone for datetime-local input
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
     setFormTime(now.toISOString().slice(0, 16));
-    
+
     setShowModal(true);
   };
 
@@ -169,13 +250,16 @@ export default function AccountantView({
     setFormLine(job.line);
     setFormSize(job.size);
     setFormOperation(job.operation);
+    setFormShift(job.shift);
+    setFormCargoStatus(job.cargoStatus);
+    setFormSubType(job.subType ?? configLists.daoChuyenSubtypes[0]?.code ?? '');
     setFormNotes(job.notes || '');
-    
+
     // Format timestamp for datetime-local
     const jobDate = new Date(job.timestamp);
     jobDate.setMinutes(jobDate.getMinutes() - jobDate.getTimezoneOffset());
     setFormTime(jobDate.toISOString().slice(0, 16));
-    
+
     setShowModal(true);
   };
 
@@ -190,10 +274,13 @@ export default function AccountantView({
       driverId: formDriverId,
       driverName: selectedDriverObj.name,
       timestamp: new Date(formTime).toISOString(),
+      shift: formShift,
       containerNo: formContainerNo.trim().toUpperCase(),
       line: formLine,
       size: formSize,
       operation: formOperation,
+      cargoStatus: formCargoStatus,
+      subType: formOperation === 'dao_chuyen' ? formSubType || undefined : undefined,
       notes: formNotes.trim()
     };
 
@@ -231,11 +318,8 @@ export default function AccountantView({
 
     if (filterShift === 'night') {
       return `Ca đêm 19:00 ${formattedDate} - 07:00 ${formattedNextDate}`;
-    } else if (filterShift === 'day') {
-      return `Ca ngày 07:00 ${formattedDate} - 19:00 ${formattedDate}`;
-    } else {
-      return `Báo cáo cả ngày ${formattedDate}`;
     }
+    return `Ca ngày 07:00 ${formattedDate} - 19:00 ${formattedDate}`;
   };
 
   const getSelectedDriverName = () => {
@@ -265,6 +349,73 @@ export default function AccountantView({
     window.print();
   };
 
+  // ===================== Báo cáo tổng hợp Nâng/Hạ & Đảo chuyển =====================
+  const periodFrom = filterDate;
+  const periodTo = isRangeMode ? filterToDate : filterDate;
+
+  const [reconciliations, setReconciliations] = useState<ReportReconciliationRow[]>([]);
+  useEffect(() => {
+    if (activeTab !== 'nang_ha' && activeTab !== 'dao_chuyen') return;
+    // Xoá ngay dữ liệu đối soát cũ trước khi fetch - tránh thoáng hiện nhầm số của report
+    // khác (hoặc kỳ báo cáo khác) trong lúc chờ query mới trả về.
+    setReconciliations([]);
+    let cancelled = false;
+    fetchReconciliations(activeTab, periodFrom, periodTo).then((data) => {
+      if (!cancelled) setReconciliations(data);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, periodFrom, periodTo]);
+
+  const handleSaveReconciliation = async (lineCode: string, confirmedQty: number | null) => {
+    const reportType = activeTab as ReconciliationReportType;
+    await upsertReconciliation({ reportType, lineCode, periodFrom, periodTo, confirmedQty });
+    setReconciliations(await fetchReconciliations(reportType, periodFrom, periodTo));
+  };
+
+  const nangHaRowGroups: SummaryRowGroup[] = [
+    { key: 'ha', label: 'HẠ', matches: (j) => j.operation === 'ha_khach_hang' },
+    { key: 'nang', label: 'NÂNG', matches: (j) => j.operation === 'nang_khach_hang' },
+    { key: 'xuat_nhap', label: 'XUẤT TÀU/NHẬP TÀU', matches: (j) => j.operation === 'xuat_tau' || j.operation === 'nhap_tau' },
+  ];
+  const nangHaBlocks: SummaryColumnBlock[] = [{ key: 'all', label: '' }];
+
+  const daoChuyenSubtypesActive = configLists.daoChuyenSubtypes.filter((s) => s.is_active);
+  const hasUnclassifiedDaoChuyen = filteredJobs.some((j) => j.operation === 'dao_chuyen' && !j.subType);
+  const daoChuyenRowGroups: SummaryRowGroup[] = [
+    ...daoChuyenSubtypesActive.map((st) => ({
+      key: st.code,
+      label: st.label,
+      matches: (j: JobEntry) => j.operation === 'dao_chuyen' && j.subType === st.code,
+    })),
+    ...(hasUnclassifiedDaoChuyen
+      ? [{ key: 'unclassified', label: 'Chưa phân loại', matches: (j: JobEntry) => j.operation === 'dao_chuyen' && !j.subType }]
+      : []),
+  ];
+  const daoChuyenBlocks: SummaryColumnBlock[] = [
+    { key: 'rong', label: 'Container rỗng', cargoStatus: 'rong' },
+    { key: 'hang', label: 'Container hàng', cargoStatus: 'hang' },
+  ];
+
+  // Ô "Tìm kiếm nhanh" cũng lọc luôn danh sách hãng tàu/tài xế hiển thị trên các báo cáo
+  // tổng hợp - nếu chỉ lọc jobs thì các dòng hãng tàu/tài xế không khớp vẫn hiện ra (rỗng số liệu),
+  // gây cảm giác "tìm kiếm không có tác dụng".
+  // Một dòng (hãng tàu/tài xế) được giữ lại nếu: tự nó khớp từ khoá, HOẶC nó có ít nhất 1 lượt
+  // chấm công nằm trong filteredJobs (vì searchQuery đã tìm rộng theo container/hãng tàu/ghi
+  // chú/tên tài xế ở filteredJobs - ví dụ gõ "MSK" phải vẫn hiện tài xế có lượt chở hãng MSK).
+  const searchTerm = stripDiacritics(searchQuery);
+  const lineCodesInFilteredJobs = new Set(filteredJobs.map((j) => j.line));
+  const driverIdsInFilteredJobs = new Set(filteredJobs.map((j) => j.driverId));
+  const reportLines = searchTerm
+    ? shippingLines.filter((l) => lineCodesInFilteredJobs.has(l) || stripDiacritics(l).includes(searchTerm))
+    : shippingLines;
+  const reportDrivers = drivers.filter(
+    (d) =>
+      (filterDriver === 'all' || d.id === filterDriver) &&
+      (!searchTerm || driverIdsInFilteredJobs.has(d.id) || stripDiacritics(d.name).includes(searchTerm))
+  );
+
   return (
     <div className="min-h-screen flex font-sans bg-[#f8fafc] text-slate-800">
       
@@ -291,7 +442,7 @@ export default function AccountantView({
               {!sidebarCollapsed && (
                 <div>
                   <h2 className="text-sm font-black tracking-wider uppercase text-white">VẬN TẢI PRO</h2>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">ICD Cát Lái</p>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">ICD AN GIA</p>
                 </div>
               )}
             </div>
@@ -314,7 +465,7 @@ export default function AccountantView({
           <nav className="space-y-1">
             <button
               onClick={() => { setActiveTab('dashboard'); setMobileNavOpen(false); }}
-              title="Bảng Điều Khiển"
+              title="Danh Sách Sản Lượng"
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
@@ -322,8 +473,11 @@ export default function AccountantView({
               }`}
             >
               <FileSpreadsheet className="w-4.5 h-4.5 text-blue-400 shrink-0" />
-              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Bảng Điều Khiển</span>
+              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Danh Sách Sản Lượng</span>
             </button>
+            {/* Tạm ẩn menu "Báo Cáo Kế Toán" theo yêu cầu - route /accountant/report vẫn hoạt động
+                bình thường nếu truy cập trực tiếp, chỉ ẩn mục điều hướng này. */}
+            {false && (
             <button
               onClick={() => { setActiveTab('report'); setMobileNavOpen(false); }}
               title="Báo Cáo Kế Toán"
@@ -335,6 +489,43 @@ export default function AccountantView({
             >
               <Calculator className="w-4.5 h-4.5 text-slate-500 shrink-0" />
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Kế Toán</span>
+            </button>
+            )}
+            <button
+              onClick={() => { setActiveTab('driver'); setMobileNavOpen(false); }}
+              title="Báo Cáo Theo Tài Xế"
+              className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                sidebarCollapsed ? 'lg:justify-center' : ''
+              } space-x-3 text-left ${
+                activeTab === 'driver' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+              }`}
+            >
+              <Users className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Theo Tài Xế</span>
+            </button>
+            <button
+              onClick={() => { setActiveTab('nang_ha'); setMobileNavOpen(false); }}
+              title="Báo Cáo Nâng/Hạ"
+              className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                sidebarCollapsed ? 'lg:justify-center' : ''
+              } space-x-3 text-left ${
+                activeTab === 'nang_ha' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+              }`}
+            >
+              <ArrowUpDown className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Nâng/Hạ</span>
+            </button>
+            <button
+              onClick={() => { setActiveTab('dao_chuyen'); setMobileNavOpen(false); }}
+              title="Báo Cáo Đảo Chuyển"
+              className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                sidebarCollapsed ? 'lg:justify-center' : ''
+              } space-x-3 text-left ${
+                activeTab === 'dao_chuyen' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+              }`}
+            >
+              <Repeat className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Đảo Chuyển</span>
             </button>
             {isAdmin && (
               <button
@@ -393,12 +584,24 @@ export default function AccountantView({
               <h1 className="text-xl md:text-2xl font-black text-slate-900 mt-1.5 flex items-center space-x-2">
                 {activeTab === 'settings' ? <Settings className="w-7 h-7 text-blue-600" /> : <FileSpreadsheet className="w-7 h-7 text-blue-600" />}
                 <span>
-                  {activeTab === 'settings' ? 'Thiết Lập Hệ Thống' : activeTab === 'report' ? 'Báo Cáo Kế Toán' : 'Hệ Thống Quản Lý Báo Cáo Ca'}
+                  {activeTab === 'settings'
+                    ? 'Thiết Lập Hệ Thống'
+                    : activeTab === 'report'
+                    ? 'Báo Cáo Kế Toán'
+                    : activeTab === 'driver'
+                    ? 'Báo Cáo Theo Tài Xế'
+                    : activeTab === 'nang_ha'
+                    ? 'Báo Cáo Nâng/Hạ'
+                    : activeTab === 'dao_chuyen'
+                    ? 'Báo Cáo Đảo Chuyển'
+                    : 'Danh Sách Sản Lượng'}
                 </span>
               </h1>
             </div>
 
-          {activeTab !== 'settings' && (
+          {/* Ẩn ở 3 báo cáo tổng hợp (Theo tài xế / Nâng-Hạ / Đảo chuyển) - mỗi báo cáo đó đã có
+              nút "Tải Excel" riêng, còn "Thêm lượt mới"/"In Báo Cáo" không áp dụng cho các màn hình này. */}
+          {(activeTab === 'dashboard' || activeTab === 'report') && (
           <div className="flex items-center gap-2">
             <button
               onClick={handleOpenAddModal}
@@ -427,8 +630,10 @@ export default function AccountantView({
           )}
         </div>
 
-        {/* Dynamic Interactive Stats widgets */}
-        {activeTab !== 'settings' && (
+        {/* Dynamic Interactive Stats widgets - chỉ hiện ở Danh Sách Sản Lượng và Báo Cáo Kế Toán,
+            không phù hợp với 3 báo cáo tổng hợp (Theo tài xế / Nâng-Hạ / Đảo chuyển) vì các báo
+            cáo đó có bảng tổng số liệu riêng theo hãng tàu/tài xế. */}
+        {(activeTab === 'dashboard' || activeTab === 'report') && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-gradient-to-br from-white to-[#f8fafc] p-4 rounded-xl border border-slate-200/80 shadow-xs flex items-center justify-between transition-all hover:shadow-md">
             <div>
@@ -476,11 +681,6 @@ export default function AccountantView({
       {/* 2. Filters bar */}
       {activeTab !== 'settings' && (
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center gap-4 no-print shadow-xs">
-        <div className="flex items-center space-x-2 text-xs font-black uppercase text-slate-500 tracking-wider">
-          <Filter className="w-4 h-4 text-slate-400" />
-          <span>Bộ Lọc Xem Báo Cáo:</span>
-        </div>
-
         {/* Date Range Filter */}
         <DateRangePicker
           from={filterDate}
@@ -512,16 +712,6 @@ export default function AccountantView({
             }`}
           >
             Ca ngày (7h - 19h)
-          </button>
-          <button
-            onClick={() => setFilterShift('all')}
-            className={`px-3 py-1 text-xs font-bold rounded-md transition-all cursor-pointer ${
-              filterShift === 'all'
-                ? 'bg-slate-900 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-200'
-            }`}
-          >
-            Cả ngày (24h)
           </button>
         </div>
 
@@ -563,14 +753,61 @@ export default function AccountantView({
           onCreateAccount={onCreateAccount}
           onToggleAccountActive={onToggleAccountActive}
           onDeleteAccount={onDeleteAccount}
+          onUpdateAccountEmail={onUpdateAccountEmail}
           onAddShippingLine={onAddShippingLine}
           onToggleShippingLine={onToggleShippingLine}
           onAddContainerSize={onAddContainerSize}
           onToggleContainerSize={onToggleContainerSize}
           onToggleOperationType={onToggleOperationType}
+          onAddOperationType={onAddOperationType}
+          onAddDaoChuyenSubtype={onAddDaoChuyenSubtype}
+          onToggleDaoChuyenSubtype={onToggleDaoChuyenSubtype}
+          onAddNotePreset={onAddNotePreset}
+          onToggleNotePreset={onToggleNotePreset}
+          onDeleteNotePreset={onDeleteNotePreset}
         />
       ) : activeTab === 'report' ? (
         <AccountingReportPanel jobs={filteredJobs} rates={rates} subtitle={getShiftSubtitle()} />
+      ) : activeTab === 'driver' ? (
+        <DriverProductionReport
+          jobs={filteredJobs}
+          drivers={reportDrivers}
+          operations={operations}
+          title="Bảng Tổng Hợp Sản Lượng Theo Tài Xế"
+          subtitle={getShiftSubtitle()}
+          periodFrom={periodFrom}
+          periodTo={periodTo}
+        />
+      ) : activeTab === 'nang_ha' ? (
+        <OperationSummaryReport
+          jobs={filteredJobs}
+          lines={reportLines}
+          sizes={sizes}
+          blocks={nangHaBlocks}
+          rowGroups={nangHaRowGroups}
+          title="Bảng Tổng Hợp Sản Lượng Nâng, Hạ"
+          subtitle={getShiftSubtitle()}
+          reportType="nang_ha"
+          periodFrom={periodFrom}
+          periodTo={periodTo}
+          reconciliations={reconciliations}
+          onSaveReconciliation={handleSaveReconciliation}
+        />
+      ) : activeTab === 'dao_chuyen' ? (
+        <OperationSummaryReport
+          jobs={filteredJobs}
+          lines={reportLines}
+          sizes={sizes}
+          blocks={daoChuyenBlocks}
+          rowGroups={daoChuyenRowGroups}
+          title="Bảng Tổng Hợp Sản Lượng Đảo Chuyển"
+          subtitle={getShiftSubtitle()}
+          reportType="dao_chuyen"
+          periodFrom={periodFrom}
+          periodTo={periodTo}
+          reconciliations={reconciliations}
+          onSaveReconciliation={handleSaveReconciliation}
+        />
       ) : (
       <>
       {/* 3. The Report View (Matching the requested template) */}
@@ -592,7 +829,7 @@ export default function AccountantView({
 
           {/* Grid Container Table */}
           <div className="overflow-x-auto border border-black max-w-full">
-            <table className="w-full text-center text-xs border-collapse table-fixed select-all">
+            <table className="w-full text-center text-xs border-collapse table-fixed select-text">
               <colgroup>
                 <col className="w-[40px]" />
                 <col className="w-[130px]" />
@@ -645,14 +882,15 @@ export default function AccountantView({
               </thead>
 
               <tbody className="divide-y divide-black text-black bg-white font-medium font-mono">
-                {filteredJobs.length === 0 ? (
+                {dashboardRows.length === 0 ? (
                   <tr>
                     <td colSpan={6 + sizes.length * operations.length + 2} className="py-12 text-center text-slate-400 font-sans italic">
-                      Không tìm thấy dữ liệu chấm công cho bộ lọc hiện tại.
+                      {pagedLoading ? 'Đang tải...' : 'Không tìm thấy dữ liệu chấm công cho bộ lọc hiện tại.'}
                     </td>
                   </tr>
                 ) : (
-                  filteredJobs.map((job, idx) => {
+                  dashboardRows.map((job, localIdx) => {
+                    const idx = dashboardPage * DASHBOARD_PAGE_SIZE + localIdx;
                     return (
                       <tr key={job.id} className="hover:bg-slate-50 border-b border-black h-8">
                         {/* Static Columns */}
@@ -744,6 +982,32 @@ export default function AccountantView({
             </table>
           </div>
 
+          {/* Phân trang - 20 dòng/trang, đổi trang là gọi API tải trang mới (trừ khi đang tìm kiếm) */}
+          <div className="flex items-center justify-between mt-4 no-print">
+            <span className="text-xs font-semibold text-slate-500">
+              {dashboardTotal === 0
+                ? 'Không có dữ liệu'
+                : `Trang ${dashboardPage + 1}/${dashboardTotalPages} - tổng ${dashboardTotal} dòng`}
+              {pagedLoading && <Loader2 className="inline w-3.5 h-3.5 ml-1.5 animate-spin align-text-bottom" />}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setDashboardPage((p) => Math.max(0, p - 1))}
+                disabled={dashboardPage === 0 || pagedLoading}
+                className="p-1.5 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setDashboardPage((p) => Math.min(dashboardTotalPages - 1, p + 1))}
+                disabled={dashboardPage >= dashboardTotalPages - 1 || pagedLoading}
+                className="p-1.5 border border-slate-300 rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
           {/* Bottom Signatures Block */}
           <div className="grid grid-cols-2 mt-12 text-center text-xs font-bold font-sans">
             <div className="space-y-16">
@@ -758,7 +1022,7 @@ export default function AccountantView({
 
             <div className="space-y-16">
               <div>
-                <p className="uppercase tracking-wider">ICD CÁT LÁI</p>
+                <p className="uppercase tracking-wider">ICD AN GIA</p>
                 <p className="text-[10px] text-slate-500 font-normal italic">(Ký và ghi rõ họ tên)</p>
               </div>
               <p className="text-sm font-extrabold italic text-slate-400">
@@ -858,6 +1122,47 @@ export default function AccountantView({
                     <option key={op.code} value={op.code}>{op.label}</option>
                   ))}
                 </select>
+              </div>
+
+              {formOperation === 'dao_chuyen' && configLists.daoChuyenSubtypes.length > 0 && (
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Phân loại đảo chuyển</label>
+                  <select
+                    value={formSubType}
+                    onChange={(e) => setFormSubType(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
+                  >
+                    {configLists.daoChuyenSubtypes.map((st) => (
+                      <option key={st.code} value={st.code}>{st.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Shift & cargo status */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Ca làm việc *</label>
+                  <select
+                    value={formShift}
+                    onChange={(e) => setFormShift(e.target.value as 'day' | 'night')}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
+                  >
+                    <option value="day">Ca ngày (7h-19h)</option>
+                    <option value="night">Ca đêm (19h-7h)</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Container *</label>
+                  <select
+                    value={formCargoStatus}
+                    onChange={(e) => setFormCargoStatus(e.target.value as 'rong' | 'hang')}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
+                  >
+                    <option value="hang">Có hàng</option>
+                    <option value="rong">Rỗng</option>
+                  </select>
+                </div>
               </div>
 
               {/* Time */}

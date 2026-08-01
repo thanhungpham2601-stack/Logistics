@@ -1,6 +1,6 @@
 // Toàn bộ ca làm việc (7h/19h) và ngày làm việc được tính theo giờ Việt Nam
 // (UTC+7) một cách cố định, bất kể múi giờ hệ điều hành/trình duyệt đang xem
-// báo cáo - vì cảng ICD Cát Lái chỉ vận hành theo giờ VN.
+// báo cáo - vì cảng ICD AN GIA chỉ vận hành theo giờ VN.
 const VN_UTC_OFFSET_HOURS = 7;
 
 function parseDateParts(dateStr: string): { y: number; m: number; d: number } {
@@ -108,4 +108,45 @@ export function isJobInDateRange(jobDateStr: string, fromDateStr: string, toDate
   const rangeEnd = vnWallClockToUtcMs(toDateStr, 0, 1);
 
   return jobMs >= rangeStart && jobMs < rangeEnd;
+}
+
+/** Ngày hiện tại theo giờ Việt Nam, dạng "YYYY-MM-DD". */
+export function todayVN(): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '01';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+/** True nếu jobDateStr rơi vào N ngày gần nhất (tính cả hôm nay) theo lịch giờ Việt Nam. */
+export function isJobInLastNDays(jobDateStr: string, n: number): boolean {
+  const today = todayVN();
+  const { y, m, d } = parseDateParts(today);
+  const fromDateObj = new Date(Date.UTC(y, m - 1, d - (n - 1)));
+  const fromDateStr = `${fromDateObj.getUTCFullYear()}-${String(fromDateObj.getUTCMonth() + 1).padStart(2, '0')}-${String(fromDateObj.getUTCDate()).padStart(2, '0')}`;
+  return isJobInDateRange(jobDateStr, fromDateStr, today);
+}
+
+/**
+ * Khoảng UTC (ISO) tương ứng với 1 ca làm việc (giờ VN cố định) - dùng để lọc trực tiếp
+ * ở query Supabase (.gte/.lt trên performed_at) thay vì tải hết rồi lọc ở client.
+ */
+export function getShiftUtcRange(filterDateStr: string, shift: 'day' | 'night'): { from: string; to: string } {
+  if (shift === 'day') {
+    return {
+      from: new Date(vnWallClockToUtcMs(filterDateStr, 7)).toISOString(),
+      to: new Date(vnWallClockToUtcMs(filterDateStr, 19)).toISOString(),
+    };
+  }
+  return {
+    from: new Date(vnWallClockToUtcMs(filterDateStr, 19)).toISOString(),
+    to: new Date(vnWallClockToUtcMs(filterDateStr, 7, 1)).toISOString(),
+  };
+}
+
+/** Khoảng UTC (ISO) tương ứng với 1 khoảng ngày (giờ VN cố định), bao gồm trọn ngày đầu-cuối. */
+export function getDateRangeUtc(fromDateStr: string, toDateStr: string): { from: string; to: string } {
+  return {
+    from: new Date(vnWallClockToUtcMs(fromDateStr, 0)).toISOString(),
+    to: new Date(vnWallClockToUtcMs(toDateStr, 0, 1)).toISOString(),
+  };
 }

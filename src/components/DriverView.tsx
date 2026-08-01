@@ -3,11 +3,12 @@ import { motion } from 'motion/react';
 import {
   Truck, Clock, ClipboardList, CheckCircle2,
   Trash2, LogOut, ChevronRight, AlertTriangle,
-  Plus, Check, RotateCw, Settings, Loader2, Info
+  Plus, Check, RotateCw, Settings, Loader2, Info,
+  Edit, X, Sun, Moon, Package, PackageOpen
 } from 'lucide-react';
-import { ContainerSize, OperationType, JobEntry, Driver } from '../types';
-import { ContainerSizeRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, validateContainerNumber } from '../utils';
+import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
+import { ContainerSizeRow, DaoChuyenSubtypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
+import { formatDateTime, isJobInLastNDays, validateContainerNumber } from '../utils';
 
 interface DriverViewProps {
   currentDriver: Driver;
@@ -16,18 +17,20 @@ interface DriverViewProps {
   shippingLines: string[];
   sizes: ContainerSizeRow[];
   operations: OperationTypeRow[];
+  daoChuyenSubtypes: DaoChuyenSubtypeRow[];
+  notePresets: NotePresetRow[];
   onAddJob: (job: Omit<JobEntry, 'id' | 'driverId' | 'driverName'>) => Promise<void>;
+  onUpdateJob: (job: JobEntry) => Promise<void>;
   onDeleteJob: (jobId: string) => Promise<void>;
 }
 
-const PRESET_NOTES = [
-  'Đảo chuyển khách hàng',
-  'Nâng khách trả lại',
-  'Đảo chuyển hầm tàu',
-  'Chờ lệnh phụ',
-  'Công rỗng',
-  'Công có nước',
-];
+/** Ca tự nhận diện theo giờ Việt Nam hiện tại: 07:00-18:59 = ca ngày, còn lại = ca đêm. */
+function getAutoShift(date: Date): Shift {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(date)
+  );
+  return hour >= 7 && hour < 19 ? 'day' : 'night';
+}
 
 // Icon và bảng màu cho từng loại tác nghiệp - áp dụng vòng lặp theo thứ tự cấu hình
 // trong Thiết Lập Hệ Thống, để tác nghiệp mới thêm sau vẫn có giao diện nhất quán.
@@ -56,7 +59,10 @@ export default function DriverView({
   shippingLines,
   sizes,
   operations,
+  daoChuyenSubtypes,
+  notePresets,
   onAddJob,
+  onUpdateJob,
   onDeleteJob
 }: DriverViewProps) {
   const [containerNo, setContainerNo] = useState('');
@@ -65,12 +71,16 @@ export default function DriverView({
   const [isCustomLineMode, setIsCustomLineMode] = useState(false);
   const [selectedSize, setSelectedSize] = useState<ContainerSize>(sizes[0]?.code ?? '');
   const [selectedOperation, setSelectedOperation] = useState<OperationType>(operations[0]?.code ?? 'nang_khach_hang');
+  const [selectedShift, setSelectedShift] = useState<Shift>(() => getAutoShift(new Date()));
+  const [selectedCargoStatus, setSelectedCargoStatus] = useState<CargoStatus>('hang');
+  const [selectedSubType, setSelectedSubType] = useState<string>(daoChuyenSubtypes[0]?.code ?? '');
   const [notes, setNotes] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorWarning, setErrorWarning] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
+  const [editingJob, setEditingJob] = useState<JobEntry | null>(null);
   const isBusy = isSubmitting || deletingJobId !== null;
 
   const isContainerValid = validateContainerNumber(containerNo);
@@ -81,9 +91,9 @@ export default function DriverView({
     return () => clearInterval(timer);
   }, []);
 
-  // Filter jobs submitted by THIS driver
+  // Filter jobs submitted by THIS driver, chỉ hiển thị 3 ngày gần nhất (theo lịch giờ VN)
   const myJobs = jobs
-    .filter(job => job.driverId === currentDriver.id)
+    .filter(job => job.driverId === currentDriver.id && isJobInLastNDays(job.timestamp, 3))
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   // Count stats for this driver today
@@ -113,10 +123,13 @@ export default function DriverView({
     try {
       await onAddJob({
         timestamp: new Date().toISOString(),
+        shift: selectedShift,
         containerNo: finalContainerNo,
         line: finalLine,
         size: selectedSize,
         operation: selectedOperation,
+        cargoStatus: selectedCargoStatus,
+        subType: selectedOperation === 'dao_chuyen' ? selectedSubType || undefined : undefined,
         notes: notes.trim()
       });
 
@@ -266,6 +279,39 @@ export default function DriverView({
             <p className="text-xs text-slate-400">Chọn chính xác thông tin container để chấm công chuẩn</p>
           </div>
 
+          {/* 0. Shift */}
+          <div className="space-y-2">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+              Ca Làm Việc
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedShift('day')}
+                className={`py-2.5 flex items-center justify-center gap-1.5 font-bold text-xs rounded-xl border-2 transition-all cursor-pointer ${
+                  selectedShift === 'day'
+                    ? 'bg-amber-500/15 border-amber-500 text-amber-400'
+                    : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <Sun className="w-4 h-4" />
+                <span>Ca ngày (7h-19h)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedShift('night')}
+                className={`py-2.5 flex items-center justify-center gap-1.5 font-bold text-xs rounded-xl border-2 transition-all cursor-pointer ${
+                  selectedShift === 'night'
+                    ? 'bg-indigo-500/15 border-indigo-500 text-indigo-400'
+                    : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
+                }`}
+              >
+                <Moon className="w-4 h-4" />
+                <span>Ca đêm (19h-7h)</span>
+              </button>
+            </div>
+          </div>
+
           {/* 1. Container Number */}
           <div className="space-y-1.5">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
@@ -300,9 +346,31 @@ export default function DriverView({
 
           {/* 2. Container Size */}
           <div className="space-y-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
-              2. Kích Thước (Size)
-            </label>
+            <div className="flex justify-between items-center">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                2. Kích Thước (Size)
+              </label>
+              <div className="flex items-center bg-[#0b0f19] border border-slate-800/80 rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCargoStatus('hang')}
+                  className={`flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                    selectedCargoStatus === 'hang' ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-500'
+                  }`}
+                >
+                  <Package className="w-3 h-3" /> Có hàng
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCargoStatus('rong')}
+                  className={`flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
+                    selectedCargoStatus === 'rong' ? 'bg-slate-600/40 text-slate-200' : 'text-slate-500'
+                  }`}
+                >
+                  <PackageOpen className="w-3 h-3" /> Rỗng
+                </button>
+              </div>
+            </div>
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
               {sizes.map((size) => (
                 <button
@@ -346,8 +414,8 @@ export default function DriverView({
                 required={isCustomLineMode}
               />
             ) : (
-              <div className="grid grid-cols-3 gap-2">
-                {shippingLines.slice(0, 6).map((line) => (
+              <div className="grid grid-cols-3 gap-2 max-h-[220px] overflow-y-auto pr-0.5">
+                {shippingLines.map((line) => (
                   <button
                     key={line}
                     type="button"
@@ -392,6 +460,31 @@ export default function DriverView({
             </div>
           </div>
 
+          {/* 4b. Phân loại đảo chuyển - chỉ hiện khi chọn tác nghiệp Đảo chuyển */}
+          {selectedOperation === 'dao_chuyen' && daoChuyenSubtypes.length > 0 && (
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                Phân Loại Đảo Chuyển
+              </label>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {daoChuyenSubtypes.map((st) => (
+                  <button
+                    key={st.code}
+                    type="button"
+                    onClick={() => setSelectedSubType(st.code)}
+                    className={`py-2.5 px-2 text-center font-bold text-[11px] rounded-xl border-2 transition-all cursor-pointer ${
+                      selectedSubType === st.code
+                        ? 'bg-orange-500/15 border-orange-500 text-orange-400'
+                        : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
+                    }`}
+                  >
+                    {st.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 5. Ghi Chú */}
           <div className="space-y-2">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
@@ -404,23 +497,23 @@ export default function DriverView({
               placeholder="Nhập ghi chú chi tiết..."
               className="w-full bg-[#0b0f19] border-2 border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"
             />
-            
+
             {/* Quick Notes Suggestions */}
             <div className="flex flex-wrap gap-1.5 pt-1">
-              {PRESET_NOTES.map((preset) => {
-                const isActive = notes.includes(preset);
+              {notePresets.filter((p) => p.is_active).map((preset) => {
+                const isActive = notes.includes(preset.label);
                 return (
                   <button
-                    key={preset}
+                    key={preset.id}
                     type="button"
-                    onClick={() => selectQuickNote(preset)}
+                    onClick={() => selectQuickNote(preset.label)}
                     className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-all cursor-pointer ${
-                      isActive 
-                        ? 'bg-blue-500/20 border-blue-500 text-blue-300' 
+                      isActive
+                        ? 'bg-blue-500/20 border-blue-500 text-blue-300'
                         : 'bg-[#0b0f19]/60 border-slate-800/80 text-slate-400 hover:border-slate-700 hover:text-slate-300'
                     }`}
                   >
-                    {isActive ? '✓ ' : '+ '}{preset}
+                    {isActive ? '✓ ' : '+ '}{preset.label}
                   </button>
                 );
               })}
@@ -443,7 +536,7 @@ export default function DriverView({
           <div className="flex justify-between items-center border-b border-slate-800/60 pb-3">
             <h3 className="text-sm font-bold text-white flex items-center space-x-2">
               <ClipboardList className="w-4.5 h-4.5 text-blue-400" />
-              <span>Lịch sử chấm công gần đây ({myJobs.length})</span>
+              <span>Sản lượng của tôi - 3 ngày gần nhất ({myJobs.length})</span>
             </h3>
             {myJobs.length > 0 && (
               <span className="text-[10px] text-slate-500 font-mono italic">Mới nhất lên đầu</span>
@@ -493,24 +586,34 @@ export default function DriverView({
                       )}
                     </div>
 
-                    <button
-                      onClick={async () => {
-                        if (isBusy) return;
-                        if (confirm(`Bạn có chắc muốn xoá chấm công công ${job.containerNo}?`)) {
-                          setDeletingJobId(job.id);
-                          try {
-                            await onDeleteJob(job.id);
-                          } finally {
-                            setDeletingJobId(null);
+                    <div className="flex items-center shrink-0">
+                      <button
+                        onClick={() => !isBusy && setEditingJob(job)}
+                        disabled={isBusy}
+                        className="p-2 text-slate-500 hover:text-blue-400 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Sửa lượt này"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={async () => {
+                          if (isBusy) return;
+                          if (confirm(`Bạn có chắc muốn xoá chấm công công ${job.containerNo}?`)) {
+                            setDeletingJobId(job.id);
+                            try {
+                              await onDeleteJob(job.id);
+                            } finally {
+                              setDeletingJobId(null);
+                            }
                           }
-                        }
-                      }}
-                      disabled={isBusy}
-                      className="p-2 text-slate-500 hover:text-red-400 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                      title="Xoá lượt này"
-                    >
-                      {deletingJobId === job.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                    </button>
+                        }}
+                        disabled={isBusy}
+                        className="p-2 text-slate-500 hover:text-red-400 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Xoá lượt này"
+                      >
+                        {deletingJobId === job.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                      </button>
+                    </div>
                   </div>
                 );
               })}
@@ -521,9 +624,195 @@ export default function DriverView({
 
       {/* Quick visual footer with brand and status (Subtle & Clean) */}
       <footer className="mt-auto py-5 text-center border-t border-slate-900/60 bg-slate-950/60 text-slate-500 text-[10px] z-10">
-        <p>© 2026 Hệ thống chấm công ICD Cát Lái</p>
+        <p>© 2026 Hệ thống chấm công ICD AN GIA</p>
         <p className="text-[9px] mt-0.5 text-slate-600">Được tối ưu hoá cho thiết bị di động</p>
       </footer>
+
+      {editingJob && (
+        <EditJobModal
+          job={editingJob}
+          sizes={sizes}
+          operations={operations}
+          shippingLines={shippingLines}
+          daoChuyenSubtypes={daoChuyenSubtypes}
+          onClose={() => setEditingJob(null)}
+          onSave={async (patch) => {
+            await onUpdateJob({ ...editingJob, ...patch });
+            setEditingJob(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+interface EditJobModalProps {
+  job: JobEntry;
+  sizes: ContainerSizeRow[];
+  operations: OperationTypeRow[];
+  shippingLines: string[];
+  daoChuyenSubtypes: DaoChuyenSubtypeRow[];
+  onClose: () => void;
+  onSave: (patch: Partial<JobEntry>) => Promise<void>;
+}
+
+function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes, onClose, onSave }: EditJobModalProps) {
+  const [containerNo, setContainerNo] = useState(job.containerNo);
+  const [line, setLine] = useState(job.line);
+  const [size, setSize] = useState<ContainerSize>(job.size);
+  const [operation, setOperation] = useState<OperationType>(job.operation);
+  const [cargoStatus, setCargoStatus] = useState<CargoStatus>(job.cargoStatus);
+  const [subType, setSubType] = useState<string>(job.subType ?? daoChuyenSubtypes[0]?.code ?? '');
+  const [notes, setNotes] = useState(job.notes ?? '');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const isValid = validateContainerNumber(containerNo);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isValid || isSaving) return;
+    setIsSaving(true);
+    try {
+      await onSave({
+        containerNo: containerNo.trim().toUpperCase(),
+        line,
+        size,
+        operation,
+        cargoStatus,
+        subType: operation === 'dao_chuyen' ? subType || undefined : undefined,
+        notes: notes.trim(),
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 flex items-center justify-center p-4 backdrop-blur-xs">
+      <div className="bg-[#131924] rounded-2xl max-w-md w-full border border-slate-800 shadow-2xl p-5 relative text-slate-100">
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 cursor-pointer">
+          <X className="w-5 h-5" />
+        </button>
+        <h3 className="text-base font-bold text-white border-b border-slate-800 pb-3 mb-4">Sửa Lượt Chấm Công</h3>
+
+        <form onSubmit={handleSubmit} className="space-y-3.5">
+          <div className="space-y-1">
+            <label className="block text-[11px] font-bold uppercase text-slate-400">Số hiệu Container</label>
+            <input
+              type="text"
+              value={containerNo}
+              onChange={(e) => setContainerNo(e.target.value)}
+              onBlur={() => setContainerNo((v) => v.trim().toUpperCase())}
+              className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm font-mono font-bold uppercase text-white focus:outline-none focus:border-blue-500"
+              required
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase text-slate-400">Hãng tàu</label>
+              <select
+                value={line}
+                onChange={(e) => setLine(e.target.value)}
+                className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none"
+              >
+                {(shippingLines.includes(line) ? shippingLines : [line, ...shippingLines]).map((l) => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase text-slate-400">Kích thước</label>
+              <select
+                value={size}
+                onChange={(e) => setSize(e.target.value)}
+                className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none"
+              >
+                {sizes.map((s) => (
+                  <option key={s.code} value={s.code}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-[11px] font-bold uppercase text-slate-400">Loại tác nghiệp</label>
+            <select
+              value={operation}
+              onChange={(e) => setOperation(e.target.value as OperationType)}
+              className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none"
+            >
+              {operations.map((op) => (
+                <option key={op.code} value={op.code}>{op.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {operation === 'dao_chuyen' && daoChuyenSubtypes.length > 0 && (
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase text-slate-400">Phân loại đảo chuyển</label>
+              <select
+                value={subType}
+                onChange={(e) => setSubType(e.target.value)}
+                className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none"
+              >
+                {daoChuyenSubtypes.map((st) => (
+                  <option key={st.code} value={st.code}>{st.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <label className="block text-[11px] font-bold uppercase text-slate-400">Container rỗng / có hàng</label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setCargoStatus('hang')}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg border cursor-pointer ${cargoStatus === 'hang' ? 'bg-emerald-500/15 border-emerald-500 text-emerald-400' : 'bg-[#0b0f19] border-slate-800 text-slate-400'}`}
+              >
+                Có hàng
+              </button>
+              <button
+                type="button"
+                onClick={() => setCargoStatus('rong')}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg border cursor-pointer ${cargoStatus === 'rong' ? 'bg-slate-600/40 border-slate-500 text-slate-200' : 'bg-[#0b0f19] border-slate-800 text-slate-400'}`}
+              >
+                Rỗng
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-[11px] font-bold uppercase text-slate-400">Ghi chú</label>
+            <input
+              type="text"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
+            />
+          </div>
+
+          <div className="pt-2 flex justify-end gap-2 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSaving}
+              className="px-4 py-2 border border-slate-700 rounded-lg text-slate-300 text-sm font-bold hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+            >
+              Huỷ
+            </button>
+            <button
+              type="submit"
+              disabled={!isValid || isSaving}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-60 text-white text-sm font-bold rounded-lg cursor-pointer"
+            >
+              {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
+              <span>{isSaving ? 'Đang lưu...' : 'Lưu thay đổi'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
