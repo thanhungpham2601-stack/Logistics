@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { Driver, JobEntry, UserRole } from './types';
 import LoginScreen from './components/LoginScreen';
@@ -64,6 +64,10 @@ export default function App() {
   const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [resolvingAuth, setResolvingAuth] = useState(false);
+  // Supabase có thể bắn lại sự kiện SIGNED_IN (không phải đăng nhập mới) khi tab lấy lại focus
+  // hoặc khi tự làm mới token. Cờ này chặn việc tự đăng nhập lại ngay sau khi người dùng chủ
+  // động bấm Đăng xuất, tránh vòng lặp "đăng xuất xong lại tự vào lại".
+  const isLoggingOutRef = useRef(false);
   // 'select' = màn hình 2 nút chọn chế độ; chỉ dùng khi AUTH_MODE === 'dev'.
   // Khi AUTH_MODE === 'real', khoá cứng về 'real' ngay từ đầu, bỏ qua màn hình chọn.
   const [loginView, setLoginView] = useState<'select' | 'dev' | 'real'>(AUTH_MODE === 'real' ? 'real' : 'select');
@@ -110,6 +114,7 @@ export default function App() {
     let resolvedForUserId: string | null = null;
 
     const resolveGoogleAccount = async (authUserId: string, email: string | undefined) => {
+      if (isLoggingOutRef.current) return; // đang chủ động đăng xuất - không tự đăng nhập lại
       if (resolvedForUserId === authUserId) return;
       resolvedForUserId = authUserId;
 
@@ -130,7 +135,12 @@ export default function App() {
         }
         setCurrentAccount(account);
         localStorage.setItem(CURRENT_ACCOUNT_KEY, account.id);
-        navigate(homePathFor(account), { replace: true });
+        // Chỉ tự điều hướng khi đang đứng ở trang đăng nhập - tránh việc Supabase bắn lại
+        // SIGNED_IN lúc tab lấy focus/refresh token làm bật người dùng ra khỏi trang họ đang xem
+        // (VD: đang xem "Báo Cáo Theo Tài Xế" thì bị đá về Danh Sách Sản Lượng).
+        if (window.location.pathname === '/login') {
+          navigate(homePathFor(account), { replace: true });
+        }
       } catch (err) {
         // Không để lỗi (mạng, Supabase...) rơi mất im lặng - phải luôn có thông báo cho người dùng.
         console.error('Lỗi xác thực Google:', err);
@@ -181,11 +191,12 @@ export default function App() {
     navigate(homePathFor(account), { replace: true });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    isLoggingOutRef.current = true;
     setCurrentAccount(null);
     localStorage.removeItem(CURRENT_ACCOUNT_KEY);
     if (AUTH_MODE === 'real') {
-      supabase.auth.signOut();
+      await supabase.auth.signOut();
     }
     navigate('/login', { replace: true });
   };
@@ -349,6 +360,7 @@ export default function App() {
               resolving={resolvingAuth}
               authError={authError}
               onBack={AUTH_MODE === 'dev' ? () => setLoginView('select') : undefined}
+              onBeforeSignIn={() => { isLoggingOutRef.current = false; }}
             />
           ) : (
             <LoginScreen

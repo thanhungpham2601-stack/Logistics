@@ -6,6 +6,7 @@ interface GoogleLoginScreenProps {
   resolving: boolean;
   authError: string | null;
   onBack?: () => void;
+  onBeforeSignIn?: () => void;
 }
 
 function GoogleIcon() {
@@ -19,10 +20,11 @@ function GoogleIcon() {
   );
 }
 
-export default function GoogleLoginScreen({ resolving, authError, onBack }: GoogleLoginScreenProps) {
+export default function GoogleLoginScreen({ resolving, authError, onBack, onBeforeSignIn }: GoogleLoginScreenProps) {
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const handleGoogleSignIn = async () => {
+    onBeforeSignIn?.();
     setIsRedirecting(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
