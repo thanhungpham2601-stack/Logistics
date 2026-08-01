@@ -197,6 +197,12 @@ export default function App() {
     localStorage.removeItem(CURRENT_ACCOUNT_KEY);
     if (AUTH_MODE === 'real') {
       await supabase.auth.signOut();
+      // Dọn sạch tay mọi session Supabase còn sót lại trong localStorage (phòng khi signOut()
+      // không xoá kịp do lỗi mạng/race) - đảm bảo tải lại trang sau khi đăng xuất (VD: gõ lại
+      // URL, xoá bớt "/login") chắc chắn không tự đăng nhập lại vì đọc thấy session cũ.
+      Object.keys(localStorage)
+        .filter((key) => key.startsWith('sb-'))
+        .forEach((key) => localStorage.removeItem(key));
     }
     navigate('/login', { replace: true });
   };
