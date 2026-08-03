@@ -39,6 +39,11 @@ import {
 import { OperationRateRow } from './lib/supabaseTypes';
 
 const CURRENT_ACCOUNT_KEY = 'icd_current_account_id';
+// Cờ bền (sống qua cả việc đóng/mở lại trình duyệt) đánh dấu "người dùng vừa chủ động đăng
+// xuất" - chỉ bị xoá khi họ tự bấm "Đăng nhập bằng Google" lần nữa. Dùng localStorage (không
+// phải biến trong bộ nhớ) vì cần chặn cả trường hợp mở lại web sau khi đã đóng hẳn trình duyệt,
+// không chỉ trong lúc đang mở tab.
+const EXPLICIT_LOGOUT_KEY = 'icd_explicit_logout';
 
 // Chế độ đăng nhập:
 //  - 'dev'  (mặc định): hiện màn hình cho CHỌN 1 trong 2 - "Nhà phát triển" (tài khoản mock,
@@ -114,7 +119,9 @@ export default function App() {
     let resolvedForUserId: string | null = null;
 
     const resolveGoogleAccount = async (authUserId: string, email: string | undefined) => {
-      if (isLoggingOutRef.current) return; // đang chủ động đăng xuất - không tự đăng nhập lại
+      // Đang chủ động đăng xuất, hoặc đã đăng xuất từ trước (kể cả sau khi đóng/mở lại trình
+      // duyệt) - không tự đăng nhập lại cho tới khi người dùng tự bấm nút Google lần nữa.
+      if (isLoggingOutRef.current || localStorage.getItem(EXPLICIT_LOGOUT_KEY) === '1') return;
       if (resolvedForUserId === authUserId) return;
       resolvedForUserId = authUserId;
 
@@ -196,6 +203,7 @@ export default function App() {
     setCurrentAccount(null);
     localStorage.removeItem(CURRENT_ACCOUNT_KEY);
     if (AUTH_MODE === 'real') {
+      localStorage.setItem(EXPLICIT_LOGOUT_KEY, '1');
       await supabase.auth.signOut();
       // Dọn sạch tay mọi session Supabase còn sót lại trong localStorage (phòng khi signOut()
       // không xoá kịp do lỗi mạng/race) - đảm bảo tải lại trang sau khi đăng xuất (VD: gõ lại
@@ -366,7 +374,10 @@ export default function App() {
               resolving={resolvingAuth}
               authError={authError}
               onBack={AUTH_MODE === 'dev' ? () => setLoginView('select') : undefined}
-              onBeforeSignIn={() => { isLoggingOutRef.current = false; }}
+              onBeforeSignIn={() => {
+                isLoggingOutRef.current = false;
+                localStorage.removeItem(EXPLICIT_LOGOUT_KEY);
+              }}
             />
           ) : (
             <LoginScreen

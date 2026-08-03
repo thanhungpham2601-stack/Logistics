@@ -5,6 +5,10 @@ import {ConfigProvider} from 'antd';
 import viVN from 'antd/locale/vi_VN';
 import App from './App.tsx';
 import './index.css';
+import { applyTheme, getStoredTheme } from './lib/theme';
+
+// Áp theme đã lưu (nếu có) trước khi vẽ trang đầu tiên - tránh nháy màu mặc định rồi mới đổi.
+applyTheme(getStoredTheme());
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

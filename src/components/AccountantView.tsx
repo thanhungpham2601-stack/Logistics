@@ -22,6 +22,8 @@ import OperationSummaryReport from './OperationSummaryReport';
 import DriverProductionReport from './DriverProductionReport';
 import SearchableSelect from './SearchableSelect';
 import DateRangePicker from './DateRangePicker';
+import ThemePicker from './ThemePicker';
+import { ThemeName, getStoredTheme } from '../lib/theme';
 
 interface AccountantViewProps {
   jobs: JobEntry[];
@@ -90,9 +92,9 @@ export default function AccountantView({
   const [filterToDate, setFilterToDate] = useState(todayVN()); // Khi khác filterDate -> chế độ xem khoảng ngày
   const [filterShift, setFilterShift] = useState<'day' | 'night'>('night');
   const [filterDriver, setFilterDriver] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [theme, setTheme] = useState<ThemeName>(getStoredTheme());
 
   // Mỗi tab có URL riêng: /accountant, /accountant/report, /accountant/theo-tai-xe, /accountant/nang-ha, /accountant/dao-chuyen, /accountant/settings
   type AccountantTab = 'dashboard' | 'report' | 'driver' | 'nang_ha' | 'dao_chuyen' | 'settings';
@@ -110,6 +112,19 @@ export default function AccountantView({
     ? 'dao_chuyen'
     : 'dashboard';
   const activeTab = urlTab === 'settings' && !isAdmin ? 'dashboard' : urlTab;
+
+  // Mỗi tab giữ ô tìm kiếm riêng - gõ tìm kiếm ở báo cáo này không được ảnh hưởng đến báo cáo khác.
+  const [searchQueries, setSearchQueries] = useState<Record<AccountantTab, string>>({
+    dashboard: '',
+    report: '',
+    driver: '',
+    nang_ha: '',
+    dao_chuyen: '',
+    settings: '',
+  });
+  const searchQuery = searchQueries[activeTab];
+  const setSearchQuery = (value: string) => setSearchQueries((prev) => ({ ...prev, [activeTab]: value }));
+
   const setActiveTab = (tab: AccountantTab) => {
     const path: Record<AccountantTab, string> = {
       dashboard: '/accountant',
@@ -436,7 +451,7 @@ export default function AccountantView({
         <div className="p-4">
           <div className={`flex items-center mb-8 ${sidebarCollapsed ? 'flex-col space-y-2' : 'justify-between'}`}>
             <div className={`flex items-center space-x-3 ${sidebarCollapsed ? 'flex-col space-x-0 space-y-2' : ''}`}>
-              <div className="p-2 bg-blue-600 rounded-xl shrink-0">
+              <div className="p-2 rounded-xl shrink-0" style={{ backgroundColor: 'var(--theme-primary)' }}>
                 <Anchor className="w-6 h-6 text-white" />
               </div>
               {!sidebarCollapsed && (
@@ -466,13 +481,14 @@ export default function AccountantView({
             <button
               onClick={() => { setActiveTab('dashboard'); setMobileNavOpen(false); }}
               title="Danh Sách Sản Lượng"
+              style={activeTab === 'dashboard' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
-                activeTab === 'dashboard' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                activeTab === 'dashboard' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
               }`}
             >
-              <FileSpreadsheet className="w-4.5 h-4.5 text-blue-400 shrink-0" />
+              <FileSpreadsheet className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'dashboard' ? 'var(--theme-accent-text)' : undefined }} />
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Danh Sách Sản Lượng</span>
             </button>
             {/* Tạm ẩn menu "Báo Cáo Kế Toán" theo yêu cầu - route /accountant/report vẫn hoạt động
@@ -494,53 +510,58 @@ export default function AccountantView({
             <button
               onClick={() => { setActiveTab('driver'); setMobileNavOpen(false); }}
               title="Báo Cáo Theo Tài Xế"
+              style={activeTab === 'driver' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
-                activeTab === 'driver' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                activeTab === 'driver' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
               }`}
             >
-              <Users className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+              <Users className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'driver' ? 'var(--theme-accent-text)' : undefined }} />
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Theo Tài Xế</span>
             </button>
             <button
               onClick={() => { setActiveTab('nang_ha'); setMobileNavOpen(false); }}
               title="Báo Cáo Nâng/Hạ"
+              style={activeTab === 'nang_ha' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
-                activeTab === 'nang_ha' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                activeTab === 'nang_ha' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
               }`}
             >
-              <ArrowUpDown className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+              <ArrowUpDown className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'nang_ha' ? 'var(--theme-accent-text)' : undefined }} />
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Nâng/Hạ</span>
             </button>
             <button
               onClick={() => { setActiveTab('dao_chuyen'); setMobileNavOpen(false); }}
               title="Báo Cáo Đảo Chuyển"
+              style={activeTab === 'dao_chuyen' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
-                activeTab === 'dao_chuyen' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                activeTab === 'dao_chuyen' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
               }`}
             >
-              <Repeat className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+              <Repeat className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'dao_chuyen' ? 'var(--theme-accent-text)' : undefined }} />
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Đảo Chuyển</span>
             </button>
             {isAdmin && (
               <button
                 onClick={() => { setActiveTab('settings'); setMobileNavOpen(false); }}
                 title="Thiết Lập Hệ Thống"
+                style={activeTab === 'settings' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
                 className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                   sidebarCollapsed ? 'lg:justify-center' : ''
                 } space-x-3 text-left ${
-                  activeTab === 'settings' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                  activeTab === 'settings' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
                 }`}
               >
-                <Settings className="w-4.5 h-4.5 text-slate-500 shrink-0" />
+                <Settings className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'settings' ? 'var(--theme-accent-text)' : undefined }} />
                 <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Thiết Lập Hệ Thống</span>
               </button>
             )}
+            <ThemePicker currentTheme={theme} onChange={setTheme} collapsed={sidebarCollapsed} />
           </nav>
         </div>
 
@@ -548,7 +569,14 @@ export default function AccountantView({
         <div className="p-4 border-t border-slate-850 bg-slate-950/40">
           <div className={`flex items-center justify-between ${sidebarCollapsed ? 'lg:flex-col lg:space-y-2' : ''}`}>
             <div className={`flex items-center space-x-3 ${sidebarCollapsed ? 'lg:space-x-0' : ''}`}>
-              <div className="w-9 h-9 rounded-full bg-blue-600/15 text-blue-400 flex items-center justify-center font-bold border border-blue-500/20 shadow-sm text-sm shrink-0">
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center font-bold shadow-sm text-sm shrink-0 border"
+                style={{
+                  backgroundColor: 'color-mix(in srgb, var(--theme-primary) 18%, transparent)',
+                  borderColor: 'color-mix(in srgb, var(--theme-primary) 35%, transparent)',
+                  color: 'var(--theme-accent-text)',
+                }}
+              >
                 {isAdmin ? 'AD' : 'KT'}
               </div>
               <div className={sidebarCollapsed ? 'lg:hidden' : ''}>
@@ -582,7 +610,11 @@ export default function AccountantView({
                 <Menu className="w-5 h-5" />
               </button>
               <h1 className="text-xl md:text-2xl font-black text-slate-900 mt-1.5 flex items-center space-x-2">
-                {activeTab === 'settings' ? <Settings className="w-7 h-7 text-blue-600" /> : <FileSpreadsheet className="w-7 h-7 text-blue-600" />}
+                {activeTab === 'settings' ? (
+                  <Settings className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
+                ) : (
+                  <FileSpreadsheet className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
+                )}
                 <span>
                   {activeTab === 'settings'
                     ? 'Thiết Lập Hệ Thống'

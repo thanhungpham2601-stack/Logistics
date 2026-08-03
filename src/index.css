@@ -6,6 +6,46 @@
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
+/* ===================== Theme màu (người dùng chọn ở sidebar) =====================
+   Đổi bằng cách set [data-theme="..."] trên <html> (xem src/lib/theme.ts). Mặc định
+   "blue" giữ nguyên đúng màu gốc của app trước đây - không ai bị đổi giao diện nếu
+   chưa từng chọn theme khác. */
+:root,
+[data-theme='blue'] {
+  --theme-primary: #2563eb; /* blue-600 */
+  --theme-primary-hover: #3b82f6; /* blue-500 */
+  --theme-primary-soft: #1d4ed8; /* blue-700, dùng cho nền nhạt/border */
+  --theme-accent-text: #60a5fa; /* blue-400 */
+}
+
+[data-theme='emerald'] {
+  --theme-primary: #059669;
+  --theme-primary-hover: #10b981;
+  --theme-primary-soft: #047857;
+  --theme-accent-text: #34d399;
+}
+
+[data-theme='violet'] {
+  --theme-primary: #7c3aed;
+  --theme-primary-hover: #8b5cf6;
+  --theme-primary-soft: #6d28d9;
+  --theme-accent-text: #a78bfa;
+}
+
+[data-theme='rose'] {
+  --theme-primary: #e11d48;
+  --theme-primary-hover: #f43f5e;
+  --theme-primary-soft: #be123c;
+  --theme-accent-text: #fb7185;
+}
+
+[data-theme='amber'] {
+  --theme-primary: #d97706;
+  --theme-primary-hover: #f59e0b;
+  --theme-primary-soft: #b45309;
+  --theme-accent-text: #fbbf24;
+}
+
 @layer utilities {
   /* Print Styles for clean paper presentation */
   @media print {

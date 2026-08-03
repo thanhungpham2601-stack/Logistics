@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import {
   Truck, Clock, ClipboardList, CheckCircle2,
-  Trash2, LogOut, ChevronRight, AlertTriangle,
-  Plus, Check, RotateCw, Settings, Loader2, Info,
+  Trash2, LogOut, ChevronRight, ChevronLeft, AlertTriangle,
+  Plus, Check, RotateCw, Settings, Loader2, Info, Search,
   Edit, X, Sun, Moon, Package, PackageOpen
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
 import { ContainerSizeRow, DaoChuyenSubtypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, isJobInLastNDays, validateContainerNumber } from '../utils';
+import { formatDateTime, isJobInLastNDays, validateContainerNumber, stripDiacritics } from '../utils';
 
 interface DriverViewProps {
   currentDriver: Driver;
@@ -34,6 +34,8 @@ function getAutoShift(date: Date): Shift {
 
 // Icon và bảng màu cho từng loại tác nghiệp - áp dụng vòng lặp theo thứ tự cấu hình
 // trong Thiết Lập Hệ Thống, để tác nghiệp mới thêm sau vẫn có giao diện nhất quán.
+// Nền sáng tương phản cao: trạng thái ĐANG CHỌN dùng màu đặc + chữ trắng (không dùng độ
+// trong suốt) để tài xế vẫn phân biệt rõ dưới nắng gắt/ánh sáng chói ngoài trời.
 const OP_EMOJI: Record<string, string> = {
   nang_khach_hang: '🚚',
   ha_khach_hang: '🏗️',
@@ -44,12 +46,12 @@ const OP_EMOJI: Record<string, string> = {
 };
 
 const OP_COLOR_CYCLE = [
-  { border: 'border-emerald-500', text: 'text-emerald-400', shadow: 'shadow-emerald-500/5', chipBg: 'bg-emerald-500/10', chipBorder: 'border-emerald-500/30' },
-  { border: 'border-blue-500', text: 'text-blue-400', shadow: 'shadow-blue-500/5', chipBg: 'bg-blue-500/10', chipBorder: 'border-blue-500/30' },
-  { border: 'border-indigo-500', text: 'text-indigo-400', shadow: 'shadow-indigo-500/5', chipBg: 'bg-indigo-500/10', chipBorder: 'border-indigo-500/30' },
-  { border: 'border-purple-500', text: 'text-purple-400', shadow: 'shadow-purple-500/5', chipBg: 'bg-purple-500/10', chipBorder: 'border-purple-500/30' },
-  { border: 'border-teal-500', text: 'text-teal-400', shadow: 'shadow-teal-500/5', chipBg: 'bg-teal-500/10', chipBorder: 'border-teal-500/30' },
-  { border: 'border-orange-500', text: 'text-orange-400', shadow: 'shadow-orange-500/5', chipBg: 'bg-orange-500/10', chipBorder: 'border-orange-500/30' },
+  { solid: 'bg-emerald-600 border-emerald-600 text-white shadow-emerald-500/30', badge: 'bg-emerald-50 border-emerald-200 text-emerald-700' },
+  { solid: 'bg-blue-600 border-blue-600 text-white shadow-blue-500/30', badge: 'bg-blue-50 border-blue-200 text-blue-700' },
+  { solid: 'bg-indigo-600 border-indigo-600 text-white shadow-indigo-500/30', badge: 'bg-indigo-50 border-indigo-200 text-indigo-700' },
+  { solid: 'bg-purple-600 border-purple-600 text-white shadow-purple-500/30', badge: 'bg-purple-50 border-purple-200 text-purple-700' },
+  { solid: 'bg-teal-600 border-teal-600 text-white shadow-teal-500/30', badge: 'bg-teal-50 border-teal-200 text-teal-700' },
+  { solid: 'bg-orange-600 border-orange-600 text-white shadow-orange-500/30', badge: 'bg-orange-50 border-orange-200 text-orange-700' },
 ];
 
 export default function DriverView({
@@ -81,6 +83,8 @@ export default function DriverView({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingJobId, setDeletingJobId] = useState<string | null>(null);
   const [editingJob, setEditingJob] = useState<JobEntry | null>(null);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyPage, setHistoryPage] = useState(0);
   const isBusy = isSubmitting || deletingJobId !== null;
 
   const isContainerValid = validateContainerNumber(containerNo);
@@ -100,6 +104,25 @@ export default function DriverView({
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
   const myTodayJobs = myJobs.filter(j => new Date(j.timestamp) >= todayStart);
+
+  // Tìm kiếm + phân trang lịch sử của tôi - không phân biệt dấu, giống ô tìm kiếm bên báo cáo.
+  const HISTORY_PAGE_SIZE = 5;
+  const filteredMyJobs = historySearch
+    ? myJobs.filter((job) => {
+        const q = stripDiacritics(historySearch);
+        return (
+          stripDiacritics(job.containerNo).includes(q) ||
+          stripDiacritics(job.line).includes(q) ||
+          (job.notes ? stripDiacritics(job.notes).includes(q) : false)
+        );
+      })
+    : myJobs;
+  const historyTotalPages = Math.max(1, Math.ceil(filteredMyJobs.length / HISTORY_PAGE_SIZE));
+  const safeHistoryPage = Math.min(historyPage, historyTotalPages - 1);
+  const pagedMyJobs = filteredMyJobs.slice(
+    safeHistoryPage * HISTORY_PAGE_SIZE,
+    safeHistoryPage * HISTORY_PAGE_SIZE + HISTORY_PAGE_SIZE
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -170,35 +193,32 @@ export default function DriverView({
   };
 
   return (
-    <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col font-sans relative overflow-hidden">
-      
-      {/* Background Graphic Accent */}
-      <div className="absolute top-0 right-0 w-[300px] h-[300px] bg-blue-500/5 rounded-full blur-[100px] pointer-events-none" />
+    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans relative">
 
       {/* Header */}
-      <header className="sticky top-0 z-40 bg-[#131924]/90 backdrop-blur border-b border-slate-800/80 px-4 py-3.5 shadow-xl flex items-center justify-between">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur border-b border-slate-200 px-4 py-3.5 shadow-sm flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-900/30">
+          <div className="w-10 h-10 rounded-full flex items-center justify-center shadow-md shrink-0" style={{ backgroundColor: 'var(--theme-primary)' }}>
             <Truck className="w-5.5 h-5.5 text-white font-bold" />
           </div>
           <div>
-            <h1 className="text-sm font-black text-blue-400 tracking-wider">TÀI XẾ CHẤM CÔNG</h1>
-            <p className="text-xs text-slate-200 font-bold">{currentDriver.name}</p>
+            <h1 className="text-sm font-black tracking-wider" style={{ color: 'var(--theme-primary)' }}>TÀI XẾ CHẤM CÔNG</h1>
+            <p className="text-xs text-slate-700 font-bold">{currentDriver.name}</p>
           </div>
         </div>
 
         <div className="flex items-center space-x-4">
           <div className="hidden xs:flex flex-col items-end text-right font-mono">
-            <span className="text-xs font-bold text-slate-300">
+            <span className="text-xs font-bold text-slate-700">
               {currentTime.toLocaleTimeString('vi-VN')}
             </span>
             <span className="text-[10px] text-slate-500 font-medium">
               {currentTime.toLocaleDateString('vi-VN')}
             </span>
           </div>
-          <button 
+          <button
             onClick={onLogout}
-            className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-800/80 hover:bg-red-500/20 hover:text-red-300 border border-slate-700/60 hover:border-red-500/30 transition-all text-xs font-bold cursor-pointer"
+            className="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition-all text-xs font-bold cursor-pointer"
           >
             <LogOut className="w-4 h-4" />
             <span className="hidden sm:inline">Đăng xuất</span>
@@ -209,79 +229,75 @@ export default function DriverView({
       {/* Main Content */}
       <main className="flex-1 max-w-lg sm:max-w-2xl lg:max-w-3xl w-full mx-auto p-4 sm:p-6 space-y-6 pb-24 z-10">
         {/* Driver Dashboard Stats card */}
-        <div className="bg-[#131924] rounded-2xl p-4 border border-slate-800/80 shadow-2xl relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-8 opacity-5">
-            <ClipboardList className="w-32 h-32 text-white" />
-          </div>
-          
-          <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center space-x-2">
-            <Clock className="w-4 h-4 text-blue-400" />
+        <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-sm relative overflow-hidden">
+          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-3 flex items-center space-x-2">
+            <Clock className="w-4 h-4" style={{ color: 'var(--theme-primary)' }} />
             <span>Thống kê ca làm hôm nay</span>
           </h2>
 
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-[#0b0f19]/80 p-3 rounded-xl border border-slate-850 text-center">
-              <span className="block text-[10px] text-slate-500 uppercase font-bold">Đã nâng</span>
-              <span className="text-xl font-black text-emerald-400 font-mono">
+            <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center">
+              <span className="block text-[10px] text-emerald-700 uppercase font-bold">Đã nâng</span>
+              <span className="text-xl font-black text-emerald-700 font-mono">
                 {myTodayJobs.filter(j => j.operation === 'nang_khach_hang').length}
               </span>
             </div>
-            <div className="bg-[#0b0f19]/80 p-3 rounded-xl border border-slate-850 text-center">
-              <span className="block text-[10px] text-slate-500 uppercase font-bold">Đã hạ</span>
-              <span className="text-xl font-black text-blue-400 font-mono">
+            <div className="bg-blue-50 p-3 rounded-xl border border-blue-200 text-center">
+              <span className="block text-[10px] text-blue-700 uppercase font-bold">Đã hạ</span>
+              <span className="text-xl font-black text-blue-700 font-mono">
                 {myTodayJobs.filter(j => j.operation === 'ha_khach_hang').length}
               </span>
             </div>
-            <div className="bg-[#0b0f19]/80 p-3 rounded-xl border border-slate-850 text-center">
-              <span className="block text-[10px] text-slate-500 uppercase font-bold">Khác</span>
-              <span className="text-xl font-black text-amber-400 font-mono">
+            <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-center">
+              <span className="block text-[10px] text-amber-700 uppercase font-bold">Khác</span>
+              <span className="text-xl font-black text-amber-700 font-mono">
                 {myTodayJobs.filter(j => !['nang_khach_hang', 'ha_khach_hang'].includes(j.operation)).length}
               </span>
             </div>
           </div>
-          <div className="mt-3 text-xs text-slate-400 text-center bg-slate-900/40 py-1.5 rounded-lg">
-            Tổng cộng đã hoàn thành: <span className="font-bold text-white font-mono">{myTodayJobs.length}</span> container
+          <div className="mt-3 text-xs text-slate-600 text-center bg-slate-50 border border-slate-200 py-1.5 rounded-lg">
+            Tổng cộng đã hoàn thành: <span className="font-bold text-slate-900 font-mono">{myTodayJobs.length}</span> container
           </div>
         </div>
 
         {/* Notifications */}
         {successMessage && (
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-emerald-500/20 border border-emerald-500/40 p-3.5 rounded-xl text-emerald-300 text-sm flex items-start space-x-3 shadow-lg"
+            className="bg-emerald-50 border-2 border-emerald-400 p-3.5 rounded-xl text-emerald-900 text-sm flex items-start space-x-3 shadow-sm"
           >
-            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
             <div>
-              <p className="font-medium">{successMessage}</p>
-              <p className="text-xs text-emerald-400/80 mt-0.5">Số liệu đã được chuyển tự động về trang báo cáo quản lý.</p>
+              <p className="font-bold">{successMessage}</p>
+              <p className="text-xs text-emerald-700 mt-0.5">Số liệu đã được chuyển tự động về trang báo cáo quản lý.</p>
             </div>
           </motion.div>
         )}
 
         {errorWarning && (
-          <div className="bg-amber-500/10 border border-amber-500/30 p-3.5 rounded-xl text-amber-200 text-xs flex items-start space-x-3">
-            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="bg-amber-50 border-2 border-amber-400 p-3.5 rounded-xl text-amber-900 text-xs flex items-start space-x-3">
+            <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <p className="font-semibold text-amber-300">Lưu ý nhập liệu</p>
-              <p className="text-amber-300/80 mt-0.5">{errorWarning}</p>
+              <p className="font-bold text-amber-900">Lưu ý nhập liệu</p>
+              <p className="text-amber-800 mt-0.5">{errorWarning}</p>
             </div>
           </div>
         )}
 
         {/* Attendance Submission Form */}
-        <form onSubmit={handleSubmit} className="bg-[#131924] rounded-2xl p-5 border border-slate-800 shadow-2xl space-y-5">
-          <div className="border-b border-slate-800/60 pb-3">
-            <h3 className="text-base font-bold text-white flex items-center space-x-2">
-              <Plus className="w-5 h-5 text-blue-400" />
+        <form onSubmit={handleSubmit} className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-5">
+          <div className="border-b border-slate-200 pb-3">
+            <h3 className="text-base font-bold text-slate-900 flex items-center space-x-2">
+              <Plus className="w-5 h-5" style={{ color: 'var(--theme-primary)' }} />
               <span>Ghi Nhận Tác Nghiệp Mới</span>
             </h3>
-            <p className="text-xs text-slate-400">Chọn chính xác thông tin container để chấm công chuẩn</p>
+            <p className="text-xs text-slate-500">Chọn chính xác thông tin container để chấm công chuẩn</p>
           </div>
 
           {/* 0. Shift */}
           <div className="space-y-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
               Ca Làm Việc
             </label>
             <div className="grid grid-cols-2 gap-2">
@@ -290,8 +306,8 @@ export default function DriverView({
                 onClick={() => setSelectedShift('day')}
                 className={`py-2.5 flex items-center justify-center gap-1.5 font-bold text-xs rounded-xl border-2 transition-all cursor-pointer ${
                   selectedShift === 'day'
-                    ? 'bg-amber-500/15 border-amber-500 text-amber-400'
-                    : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
+                    ? 'bg-amber-500 border-amber-500 text-white shadow-md shadow-amber-500/30'
+                    : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
                 }`}
               >
                 <Sun className="w-4 h-4" />
@@ -302,8 +318,8 @@ export default function DriverView({
                 onClick={() => setSelectedShift('night')}
                 className={`py-2.5 flex items-center justify-center gap-1.5 font-bold text-xs rounded-xl border-2 transition-all cursor-pointer ${
                   selectedShift === 'night'
-                    ? 'bg-indigo-500/15 border-indigo-500 text-indigo-400'
-                    : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
+                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-500/30'
+                    : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
                 }`}
               >
                 <Moon className="w-4 h-4" />
@@ -314,8 +330,8 @@ export default function DriverView({
 
           {/* 1. Container Number */}
           <div className="space-y-1.5">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
-              1. Số Hiệu Container <span className="text-red-400">*</span>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+              1. Số Hiệu Container <span className="text-red-600">*</span>
             </label>
             <div className="relative">
               <input
@@ -325,19 +341,19 @@ export default function DriverView({
                 onBlur={handleContainerBlur}
                 placeholder="Ví dụ: TRHU4320650"
                 maxLength={20}
-                className="w-full bg-[#0b0f19] border-2 border-slate-800 rounded-xl px-4 py-3.5 text-lg font-mono font-bold tracking-widest text-white placeholder-slate-600 focus:outline-none focus:border-blue-500 transition-colors uppercase"
+                className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3.5 text-lg font-mono font-bold tracking-widest text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 transition-colors uppercase"
                 required
               />
               {containerNo && validateContainerNumber(containerNo) && (
                 <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
-                  <span className="bg-emerald-500/20 text-emerald-400 p-1 rounded-full block">
+                  <span className="bg-emerald-500 text-white p-1 rounded-full block">
                     <Check className="w-4 h-4" />
                   </span>
                 </div>
               )}
             </div>
             <p className={`text-[11px] flex items-center gap-1 ${
-              containerNo && !isContainerValid ? 'text-amber-400' : 'text-slate-500'
+              containerNo && !isContainerValid ? 'text-amber-700 font-bold' : 'text-slate-500'
             }`}>
               <Info className="w-3 h-3 shrink-0" />
               <span>Đúng chuẩn: 4 chữ cái + 7 chữ số, ví dụ <span className="font-mono font-bold">TRHU4320650</span></span>
@@ -347,27 +363,27 @@ export default function DriverView({
           {/* 2. Container Size */}
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                 2. Kích Thước (Size)
               </label>
-              <div className="flex items-center bg-[#0b0f19] border border-slate-800/80 rounded-lg p-0.5">
+              <div className="flex items-center bg-slate-100 border border-slate-300 rounded-lg p-1">
                 <button
                   type="button"
                   onClick={() => setSelectedCargoStatus('hang')}
-                  className={`flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
-                    selectedCargoStatus === 'hang' ? 'bg-emerald-500/20 text-emerald-400' : 'text-slate-500'
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    selectedCargoStatus === 'hang' ? 'bg-emerald-600 text-white' : 'text-slate-600'
                   }`}
                 >
-                  <Package className="w-3 h-3" /> Có hàng
+                  <Package className="w-4 h-4" /> Có hàng
                 </button>
                 <button
                   type="button"
                   onClick={() => setSelectedCargoStatus('rong')}
-                  className={`flex items-center gap-1 px-2 py-1 text-[10px] font-bold rounded-md transition-all cursor-pointer ${
-                    selectedCargoStatus === 'rong' ? 'bg-slate-600/40 text-slate-200' : 'text-slate-500'
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                    selectedCargoStatus === 'rong' ? 'bg-slate-600 text-white' : 'text-slate-600'
                   }`}
                 >
-                  <PackageOpen className="w-3 h-3" /> Rỗng
+                  <PackageOpen className="w-4 h-4" /> Rỗng
                 </button>
               </div>
             </div>
@@ -379,8 +395,8 @@ export default function DriverView({
                   onClick={() => setSelectedSize(size.code)}
                   className={`py-3.5 text-center font-bold font-mono text-sm rounded-xl border-2 transition-all cursor-pointer ${
                     selectedSize === size.code
-                      ? 'bg-blue-500/20 border-blue-500 text-blue-400 shadow-md shadow-blue-500/10'
-                      : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700 hover:text-slate-300'
+                      ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/30'
+                      : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
                   }`}
                 >
                   {size.label}
@@ -392,13 +408,14 @@ export default function DriverView({
           {/* 3. Shipping Lines */}
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                 3. Hãng Tàu (Lines)
               </label>
               <button
                 type="button"
                 onClick={() => setIsCustomLineMode(!isCustomLineMode)}
-                className="text-xs text-blue-400 hover:underline flex items-center space-x-1 font-bold cursor-pointer"
+                className="text-xs hover:underline flex items-center space-x-1 font-bold cursor-pointer"
+                style={{ color: 'var(--theme-primary)' }}
               >
                 {isCustomLineMode ? 'Chọn hãng phổ biến' : 'Nhập hãng khác'}
               </button>
@@ -410,7 +427,7 @@ export default function DriverView({
                 value={customLine}
                 onChange={(e) => setCustomLine(e.target.value)}
                 placeholder="Nhập tên hãng tàu (Ví dụ: ONE, HMM...)"
-                className="w-full bg-[#0b0f19] border-2 border-slate-850 rounded-xl px-4 py-3 text-sm font-bold uppercase text-white focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"
+                className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-sm font-bold uppercase text-slate-900 focus:outline-none focus:border-blue-600 transition-colors placeholder:text-slate-400"
                 required={isCustomLineMode}
               />
             ) : (
@@ -420,10 +437,10 @@ export default function DriverView({
                     key={line}
                     type="button"
                     onClick={() => setSelectedLine(line)}
-                    className={`py-2.5 px-1 text-center font-bold text-xs rounded-xl border transition-all cursor-pointer truncate ${
+                    className={`py-2.5 px-1 text-center font-bold text-xs rounded-xl border-2 transition-all cursor-pointer truncate ${
                       selectedLine === line
-                        ? 'bg-blue-500/20 border-blue-500/60 text-blue-400'
-                        : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700 hover:text-slate-300'
+                        ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/30'
+                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
                     }`}
                   >
                     {line}
@@ -435,7 +452,7 @@ export default function DriverView({
 
           {/* 4. Operation Type */}
           <div className="space-y-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
               4. Loại Tác Nghiệp
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -449,8 +466,8 @@ export default function DriverView({
                     onClick={() => setSelectedOperation(op.code)}
                     className={`py-3.5 px-3 text-left font-bold text-xs rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
                       isSelected
-                        ? `bg-[#0b0f19] ${palette.border} ${palette.text} ${palette.shadow}`
-                        : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
+                        ? `${palette.solid} shadow-md`
+                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
                     }`}
                   >
                     <span className="text-base mb-1">{OP_EMOJI[op.code] ?? '📦'} {op.label}</span>
@@ -463,7 +480,7 @@ export default function DriverView({
           {/* 4b. Phân loại đảo chuyển - chỉ hiện khi chọn tác nghiệp Đảo chuyển */}
           {selectedOperation === 'dao_chuyen' && daoChuyenSubtypes.length > 0 && (
             <div className="space-y-2">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
                 Phân Loại Đảo Chuyển
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -474,8 +491,8 @@ export default function DriverView({
                     onClick={() => setSelectedSubType(st.code)}
                     className={`py-2.5 px-2 text-center font-bold text-[11px] rounded-xl border-2 transition-all cursor-pointer ${
                       selectedSubType === st.code
-                        ? 'bg-orange-500/15 border-orange-500 text-orange-400'
-                        : 'bg-[#0b0f19] border-slate-800/80 text-slate-400 hover:border-slate-700'
+                        ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-500/30'
+                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
                     }`}
                   >
                     {st.label}
@@ -487,7 +504,7 @@ export default function DriverView({
 
           {/* 5. Ghi Chú */}
           <div className="space-y-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
               5. Ghi Chú (Nếu có)
             </label>
             <input
@@ -495,7 +512,7 @@ export default function DriverView({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="Nhập ghi chú chi tiết..."
-              className="w-full bg-[#0b0f19] border-2 border-slate-800 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition-colors placeholder:text-slate-600"
+              className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-blue-600 transition-colors placeholder:text-slate-400"
             />
 
             {/* Quick Notes Suggestions */}
@@ -507,10 +524,10 @@ export default function DriverView({
                     key={preset.id}
                     type="button"
                     onClick={() => selectQuickNote(preset.label)}
-                    className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-all cursor-pointer ${
+                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border-2 transition-all cursor-pointer ${
                       isActive
-                        ? 'bg-blue-500/20 border-blue-500 text-blue-300'
-                        : 'bg-[#0b0f19]/60 border-slate-800/80 text-slate-400 hover:border-slate-700 hover:text-slate-300'
+                        ? 'bg-blue-600 border-blue-600 text-white'
+                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
                     }`}
                   >
                     {isActive ? '✓ ' : '+ '}{preset.label}
@@ -524,7 +541,7 @@ export default function DriverView({
           <button
             type="submit"
             disabled={!isContainerValid || isBusy}
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-slate-700 disabled:to-slate-700 disabled:cursor-not-allowed disabled:opacity-60 text-white font-extrabold text-base py-4 rounded-xl shadow-lg hover:shadow-blue-500/20 active:scale-[0.98] transition-all flex items-center justify-center space-x-2 mt-2 cursor-pointer"
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 disabled:from-slate-300 disabled:to-slate-300 disabled:cursor-not-allowed disabled:opacity-100 text-white disabled:text-slate-500 font-extrabold text-base py-4 rounded-xl shadow-md hover:shadow-lg active:scale-[0.98] transition-all flex items-center justify-center space-x-2 mt-2 cursor-pointer"
           >
             {isSubmitting ? <Loader2 className="w-5.5 h-5.5 animate-spin" /> : <CheckCircle2 className="w-5.5 h-5.5" />}
             <span>{isSubmitting ? 'ĐANG LƯU...' : 'XÁC NHẬN CHẤM CÔNG'}</span>
@@ -532,10 +549,10 @@ export default function DriverView({
         </form>
 
         {/* Driver's History in this Shift */}
-        <div className="bg-[#131924] rounded-2xl p-5 border border-slate-800 shadow-2xl space-y-4">
-          <div className="flex justify-between items-center border-b border-slate-800/60 pb-3">
-            <h3 className="text-sm font-bold text-white flex items-center space-x-2">
-              <ClipboardList className="w-4.5 h-4.5 text-blue-400" />
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+            <h3 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
+              <ClipboardList className="w-4.5 h-4.5" style={{ color: 'var(--theme-primary)' }} />
               <span>Sản lượng của tôi - 3 ngày gần nhất ({myJobs.length})</span>
             </h3>
             {myJobs.length > 0 && (
@@ -549,38 +566,64 @@ export default function DriverView({
               <p className="text-xs">Bạn chưa thực hiện lượt chấm công nào trong ca này.</p>
             </div>
           ) : (
-            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 divide-y divide-slate-800/40">
-              {myJobs.map((job, idx) => {
+            <>
+              {/* Ô tìm kiếm lịch sử */}
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(0); }}
+                  placeholder="Tìm theo số cont, hãng tàu, ghi chú..."
+                  className="w-full bg-white border-2 border-slate-300 rounded-xl pl-9 pr-9 py-2.5 text-xs font-bold text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 transition-colors"
+                />
+                {historySearch && (
+                  <button
+                    type="button"
+                    onClick={() => { setHistorySearch(''); setHistoryPage(0); }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {filteredMyJobs.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">
+                  <p className="text-xs">Không tìm thấy lượt chấm công phù hợp.</p>
+                </div>
+              ) : (
+            <div className="space-y-2 pr-1 divide-y divide-slate-100">
+              {pagedMyJobs.map((job, idx) => {
                 const opIdx = operations.findIndex((op) => op.code === job.operation);
                 const palette = OP_COLOR_CYCLE[opIdx >= 0 ? opIdx % OP_COLOR_CYCLE.length : 0];
-                const opStyle = `${palette.text} ${palette.chipBg} ${palette.chipBorder}`;
                 const opLabel = operations.find((op) => op.code === job.operation)?.label ?? 'Khác';
 
                 return (
                   <div key={job.id} className="pt-2 pb-2.5 flex items-center justify-between group">
                     <div className="space-y-1">
                       <div className="flex items-center space-x-2">
-                        <span className="text-sm font-mono font-bold text-white tracking-wider">
+                        <span className="text-sm font-mono font-bold text-slate-900 tracking-wider">
                           {job.containerNo}
                         </span>
-                        <span className="text-[10px] bg-[#0b0f19] border border-slate-850 px-1.5 py-0.5 rounded font-mono text-slate-300 font-bold">
+                        <span className="text-[10px] bg-slate-100 border border-slate-300 px-1.5 py-0.5 rounded font-mono text-slate-700 font-bold">
                           {job.size}
                         </span>
-                        <span className="text-[10px] text-slate-400 font-bold bg-[#131924] px-1.5 py-0.5 rounded">
+                        <span className="text-[10px] text-slate-600 font-bold bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
                           {job.line}
                         </span>
                       </div>
                       <div className="flex items-center space-x-2 text-xs">
-                        <span className={`text-[10px] px-2 py-0.5 rounded border ${opStyle}`}>
+                        <span className={`text-[10px] px-2 py-0.5 rounded border font-bold ${palette.badge}`}>
                           {opLabel}
                         </span>
                         <span className="text-slate-500 text-[10px] font-mono flex items-center font-semibold">
-                          <Clock className="w-3 h-3 mr-1 text-slate-600" />
+                          <Clock className="w-3 h-3 mr-1 text-slate-400" />
                           {formatDateTime(job.timestamp).split(' ')[0]}
                         </span>
                       </div>
                       {job.notes && (
-                        <p className="text-[11px] text-amber-300/80 italic font-medium">
+                        <p className="text-[11px] text-amber-700 italic font-medium">
                           Ghi chú: {job.notes}
                         </p>
                       )}
@@ -590,7 +633,7 @@ export default function DriverView({
                       <button
                         onClick={() => !isBusy && setEditingJob(job)}
                         disabled={isBusy}
-                        className="p-2 text-slate-500 hover:text-blue-400 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="p-2 text-slate-400 hover:text-blue-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Sửa lượt này"
                       >
                         <Edit className="w-4 h-4" />
@@ -608,7 +651,7 @@ export default function DriverView({
                           }
                         }}
                         disabled={isBusy}
-                        className="p-2 text-slate-500 hover:text-red-400 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                        className="p-2 text-slate-400 hover:text-red-600 rounded-lg hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Xoá lượt này"
                       >
                         {deletingJobId === job.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
@@ -618,14 +661,40 @@ export default function DriverView({
                 );
               })}
             </div>
+              )}
+
+              {filteredMyJobs.length > HISTORY_PAGE_SIZE && (
+                <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setHistoryPage((p) => Math.max(0, p - 1))}
+                    disabled={safeHistoryPage === 0}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    <ChevronLeft className="w-4 h-4" /> Trước
+                  </button>
+                  <span className="text-[11px] text-slate-500 font-bold font-mono">
+                    Trang {safeHistoryPage + 1}/{historyTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryPage((p) => Math.min(historyTotalPages - 1, p + 1))}
+                    disabled={safeHistoryPage >= historyTotalPages - 1}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Sau <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </main>
 
       {/* Quick visual footer with brand and status (Subtle & Clean) */}
-      <footer className="mt-auto py-5 text-center border-t border-slate-900/60 bg-slate-950/60 text-slate-500 text-[10px] z-10">
+      <footer className="mt-auto py-5 text-center border-t border-slate-200 bg-white text-slate-500 text-[10px] z-10">
         <p>© 2026 Hệ thống chấm công ICD AN GIA</p>
-        <p className="text-[9px] mt-0.5 text-slate-600">Được tối ưu hoá cho thiết bị di động</p>
+        <p className="text-[9px] mt-0.5 text-slate-400">Được tối ưu hoá cho thiết bị di động</p>
       </footer>
 
       {editingJob && (
@@ -688,33 +757,33 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 flex items-center justify-center p-4 backdrop-blur-xs">
-      <div className="bg-[#131924] rounded-2xl max-w-md w-full border border-slate-800 shadow-2xl p-5 relative text-slate-100">
-        <button onClick={onClose} className="absolute top-4 right-4 text-slate-500 hover:text-slate-300 cursor-pointer">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/50 flex items-center justify-center p-4 backdrop-blur-xs">
+      <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl p-5 relative text-slate-900">
+        <button onClick={onClose} className="absolute top-4 right-4 text-slate-400 hover:text-slate-700 cursor-pointer">
           <X className="w-5 h-5" />
         </button>
-        <h3 className="text-base font-bold text-white border-b border-slate-800 pb-3 mb-4">Sửa Lượt Chấm Công</h3>
+        <h3 className="text-base font-bold text-slate-900 border-b border-slate-200 pb-3 mb-4">Sửa Lượt Chấm Công</h3>
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
           <div className="space-y-1">
-            <label className="block text-[11px] font-bold uppercase text-slate-400">Số hiệu Container</label>
+            <label className="block text-[11px] font-bold uppercase text-slate-600">Số hiệu Container</label>
             <input
               type="text"
               value={containerNo}
               onChange={(e) => setContainerNo(e.target.value)}
               onBlur={() => setContainerNo((v) => v.trim().toUpperCase())}
-              className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm font-mono font-bold uppercase text-white focus:outline-none focus:border-blue-500"
+              className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold uppercase text-slate-900 focus:outline-none focus:border-blue-600"
               required
             />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="block text-[11px] font-bold uppercase text-slate-400">Hãng tàu</label>
+              <label className="block text-[11px] font-bold uppercase text-slate-600">Hãng tàu</label>
               <select
                 value={line}
                 onChange={(e) => setLine(e.target.value)}
-                className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none"
+                className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none"
               >
                 {(shippingLines.includes(line) ? shippingLines : [line, ...shippingLines]).map((l) => (
                   <option key={l} value={l}>{l}</option>
@@ -722,11 +791,11 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
               </select>
             </div>
             <div className="space-y-1">
-              <label className="block text-[11px] font-bold uppercase text-slate-400">Kích thước</label>
+              <label className="block text-[11px] font-bold uppercase text-slate-600">Kích thước</label>
               <select
                 value={size}
                 onChange={(e) => setSize(e.target.value)}
-                className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none"
+                className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none"
               >
                 {sizes.map((s) => (
                   <option key={s.code} value={s.code}>{s.label}</option>
@@ -736,11 +805,11 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
           </div>
 
           <div className="space-y-1">
-            <label className="block text-[11px] font-bold uppercase text-slate-400">Loại tác nghiệp</label>
+            <label className="block text-[11px] font-bold uppercase text-slate-600">Loại tác nghiệp</label>
             <select
               value={operation}
               onChange={(e) => setOperation(e.target.value as OperationType)}
-              className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none"
+              className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none"
             >
               {operations.map((op) => (
                 <option key={op.code} value={op.code}>{op.label}</option>
@@ -750,11 +819,11 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
 
           {operation === 'dao_chuyen' && daoChuyenSubtypes.length > 0 && (
             <div className="space-y-1">
-              <label className="block text-[11px] font-bold uppercase text-slate-400">Phân loại đảo chuyển</label>
+              <label className="block text-[11px] font-bold uppercase text-slate-600">Phân loại đảo chuyển</label>
               <select
                 value={subType}
                 onChange={(e) => setSubType(e.target.value)}
-                className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm font-bold text-white focus:outline-none"
+                className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none"
               >
                 {daoChuyenSubtypes.map((st) => (
                   <option key={st.code} value={st.code}>{st.label}</option>
@@ -764,19 +833,19 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
           )}
 
           <div className="space-y-1">
-            <label className="block text-[11px] font-bold uppercase text-slate-400">Container rỗng / có hàng</label>
+            <label className="block text-[11px] font-bold uppercase text-slate-600">Container rỗng / có hàng</label>
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setCargoStatus('hang')}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg border cursor-pointer ${cargoStatus === 'hang' ? 'bg-emerald-500/15 border-emerald-500 text-emerald-400' : 'bg-[#0b0f19] border-slate-800 text-slate-400'}`}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg border-2 cursor-pointer ${cargoStatus === 'hang' ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-white border-slate-300 text-slate-600'}`}
               >
                 Có hàng
               </button>
               <button
                 type="button"
                 onClick={() => setCargoStatus('rong')}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg border cursor-pointer ${cargoStatus === 'rong' ? 'bg-slate-600/40 border-slate-500 text-slate-200' : 'bg-[#0b0f19] border-slate-800 text-slate-400'}`}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg border-2 cursor-pointer ${cargoStatus === 'rong' ? 'bg-slate-600 border-slate-600 text-white' : 'bg-white border-slate-300 text-slate-600'}`}
               >
                 Rỗng
               </button>
@@ -784,21 +853,21 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
           </div>
 
           <div className="space-y-1">
-            <label className="block text-[11px] font-bold uppercase text-slate-400">Ghi chú</label>
+            <label className="block text-[11px] font-bold uppercase text-slate-600">Ghi chú</label>
             <input
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full bg-[#0b0f19] border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none"
+              className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-blue-600"
             />
           </div>
 
-          <div className="pt-2 flex justify-end gap-2 border-t border-slate-800">
+          <div className="pt-2 flex justify-end gap-2 border-t border-slate-200">
             <button
               type="button"
               onClick={onClose}
               disabled={isSaving}
-              className="px-4 py-2 border border-slate-700 rounded-lg text-slate-300 text-sm font-bold hover:bg-slate-800 cursor-pointer disabled:opacity-50"
+              className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-bold hover:bg-slate-100 cursor-pointer disabled:opacity-50"
             >
               Huỷ
             </button>
