@@ -8,7 +8,8 @@ import {
   Anchor,
   Settings, LogOut, Calculator,
   ChevronsLeft, ChevronsRight, Menu, Loader2,
-  ArrowUpDown, Repeat, Users, ChevronLeft, ChevronRight
+  ArrowUpDown, Repeat, Users, ChevronLeft, ChevronRight, ChevronDown,
+  LayoutDashboard, Database
 } from 'lucide-react';
 import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
 import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN } from '../utils';
@@ -23,6 +24,7 @@ import DriverProductionReport from './DriverProductionReport';
 import SearchableSelect from './SearchableSelect';
 import DateRangePicker from './DateRangePicker';
 import ThemePicker from './ThemePicker';
+import DashboardOverview from './DashboardOverview';
 import { ThemeName, getStoredTheme } from '../lib/theme';
 
 interface AccountantViewProps {
@@ -96,12 +98,19 @@ export default function AccountantView({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeName>(getStoredTheme());
 
-  // Mỗi tab có URL riêng: /accountant, /accountant/report, /accountant/theo-tai-xe, /accountant/nang-ha, /accountant/dao-chuyen, /accountant/settings
-  type AccountantTab = 'dashboard' | 'report' | 'driver' | 'nang_ha' | 'dao_chuyen' | 'settings';
+  // Mỗi tab có URL riêng: /accountant/tong-quan (mặc định), /accountant/danh-sach-san-luong, /accountant/report,
+  // /accountant/theo-tai-xe, /accountant/nang-ha, /accountant/dao-chuyen, /accountant/settings/nguoi-dung,
+  // /accountant/settings/master-data. "Thiết Lập Hệ Thống" tách thành 2 sub-menu (Người Dùng / Master Data) -
+  // mỗi cái có link riêng để có thể vào thẳng/bookmark, thay vì gộp chung 1 route rồi chuyển tab trong trang.
+  type AccountantTab = 'overview' | 'dashboard' | 'report' | 'driver' | 'nang_ha' | 'dao_chuyen' | 'settings_users' | 'settings_master';
   const location = useLocation();
   const navigate = useNavigate();
-  const urlTab: AccountantTab = location.pathname.endsWith('/settings')
-    ? 'settings'
+  const urlTab: AccountantTab = location.pathname.endsWith('/settings/master-data')
+    ? 'settings_master'
+    : location.pathname.endsWith('/settings') || location.pathname.endsWith('/settings/nguoi-dung')
+    ? 'settings_users'
+    : location.pathname.endsWith('/danh-sach-san-luong')
+    ? 'dashboard'
     : location.pathname.endsWith('/report')
     ? 'report'
     : location.pathname.endsWith('/theo-tai-xe')
@@ -110,29 +119,41 @@ export default function AccountantView({
     ? 'nang_ha'
     : location.pathname.endsWith('/dao-chuyen')
     ? 'dao_chuyen'
-    : 'dashboard';
-  const activeTab = urlTab === 'settings' && !isAdmin ? 'dashboard' : urlTab;
+    : 'overview';
+  const isSettingsTab = urlTab === 'settings_users' || urlTab === 'settings_master';
+  const activeTab = isSettingsTab && !isAdmin ? 'overview' : urlTab;
+
+  // "Thiết Lập Hệ Thống" là menu xổ (accordion) - 2 sub-menu chỉ hiện khi bấm mở, và tự mở sẵn
+  // nếu đang đứng ở 1 trong 2 trang con đó (vd: vào thẳng bằng link/bookmark).
+  const [settingsMenuOpen, setSettingsMenuOpen] = useState(isSettingsTab);
+  useEffect(() => {
+    if (isSettingsTab) setSettingsMenuOpen(true);
+  }, [isSettingsTab]);
 
   // Mỗi tab giữ ô tìm kiếm riêng - gõ tìm kiếm ở báo cáo này không được ảnh hưởng đến báo cáo khác.
   const [searchQueries, setSearchQueries] = useState<Record<AccountantTab, string>>({
+    overview: '',
     dashboard: '',
     report: '',
     driver: '',
     nang_ha: '',
     dao_chuyen: '',
-    settings: '',
+    settings_users: '',
+    settings_master: '',
   });
   const searchQuery = searchQueries[activeTab];
   const setSearchQuery = (value: string) => setSearchQueries((prev) => ({ ...prev, [activeTab]: value }));
 
   const setActiveTab = (tab: AccountantTab) => {
     const path: Record<AccountantTab, string> = {
-      dashboard: '/accountant',
+      overview: '/accountant/tong-quan',
+      dashboard: '/accountant/danh-sach-san-luong',
       report: '/accountant/report',
       driver: '/accountant/theo-tai-xe',
       nang_ha: '/accountant/nang-ha',
       dao_chuyen: '/accountant/dao-chuyen',
-      settings: '/accountant/settings',
+      settings_users: '/accountant/settings/nguoi-dung',
+      settings_master: '/accountant/settings/master-data',
     };
     navigate(path[tab]);
   };
@@ -479,6 +500,19 @@ export default function AccountantView({
 
           <nav className="space-y-1">
             <button
+              onClick={() => { setActiveTab('overview'); setMobileNavOpen(false); }}
+              title="Tổng Quan"
+              style={activeTab === 'overview' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
+              className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                sidebarCollapsed ? 'lg:justify-center' : ''
+              } space-x-3 text-left ${
+                activeTab === 'overview' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+              }`}
+            >
+              <LayoutDashboard className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'overview' ? 'var(--theme-accent-text)' : undefined }} />
+              <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Tổng Quan</span>
+            </button>
+            <button
               onClick={() => { setActiveTab('dashboard'); setMobileNavOpen(false); }}
               title="Danh Sách Sản Lượng"
               style={activeTab === 'dashboard' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
@@ -547,19 +581,55 @@ export default function AccountantView({
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Đảo Chuyển</span>
             </button>
             {isAdmin && (
-              <button
-                onClick={() => { setActiveTab('settings'); setMobileNavOpen(false); }}
-                title="Thiết Lập Hệ Thống"
-                style={activeTab === 'settings' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
-                className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
-                  sidebarCollapsed ? 'lg:justify-center' : ''
-                } space-x-3 text-left ${
-                  activeTab === 'settings' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
-                }`}
-              >
-                <Settings className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'settings' ? 'var(--theme-accent-text)' : undefined }} />
-                <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Thiết Lập Hệ Thống</span>
-              </button>
+              <div>
+                <button
+                  onClick={() => {
+                    if (!settingsMenuOpen) {
+                      setSettingsMenuOpen(true);
+                      if (!isSettingsTab) setActiveTab('settings_users');
+                    } else {
+                      setSettingsMenuOpen(false);
+                    }
+                  }}
+                  title="Thiết Lập Hệ Thống"
+                  style={isSettingsTab ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
+                  className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
+                    sidebarCollapsed ? 'lg:justify-center' : ''
+                  } space-x-3 text-left ${
+                    isSettingsTab ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                  }`}
+                >
+                  <Settings className="w-4.5 h-4.5 shrink-0" style={{ color: isSettingsTab ? 'var(--theme-accent-text)' : undefined }} />
+                  <span className={`flex-1 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Thiết Lập Hệ Thống</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 shrink-0 transition-transform ${settingsMenuOpen ? 'rotate-180' : ''} ${sidebarCollapsed ? 'lg:hidden' : ''}`}
+                  />
+                </button>
+                {/* 2 sub-menu, mỗi cái có link riêng (/settings/nguoi-dung, /settings/master-data) - chỉ
+                    hiện khi bấm mở menu cha (xổ xuống), ẩn khi sidebar thu gọn trên desktop. */}
+                {settingsMenuOpen && (
+                  <div className={`ml-4 pl-3 border-l border-slate-800 space-y-0.5 mt-0.5 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
+                    <button
+                      onClick={() => { setActiveTab('settings_users'); setMobileNavOpen(false); }}
+                      className={`w-full flex items-center font-bold text-[11px] px-3 py-2 rounded-lg transition-all cursor-pointer space-x-2 text-left ${
+                        activeTab === 'settings_users' ? 'text-white bg-slate-900/70' : 'text-slate-500 hover:text-white hover:bg-slate-900/50'
+                      }`}
+                    >
+                      <Users className="w-3.5 h-3.5 shrink-0" />
+                      <span>Người Dùng</span>
+                    </button>
+                    <button
+                      onClick={() => { setActiveTab('settings_master'); setMobileNavOpen(false); }}
+                      className={`w-full flex items-center font-bold text-[11px] px-3 py-2 rounded-lg transition-all cursor-pointer space-x-2 text-left ${
+                        activeTab === 'settings_master' ? 'text-white bg-slate-900/70' : 'text-slate-500 hover:text-white hover:bg-slate-900/50'
+                      }`}
+                    >
+                      <Database className="w-3.5 h-3.5 shrink-0" />
+                      <span>Master Data</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
             <ThemePicker currentTheme={theme} onChange={setTheme} collapsed={sidebarCollapsed} />
           </nav>
@@ -610,14 +680,22 @@ export default function AccountantView({
                 <Menu className="w-5 h-5" />
               </button>
               <h1 className="text-xl md:text-2xl font-black text-slate-900 mt-1.5 flex items-center space-x-2">
-                {activeTab === 'settings' ? (
-                  <Settings className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
+                {activeTab === 'settings_users' ? (
+                  <Users className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
+                ) : activeTab === 'settings_master' ? (
+                  <Database className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
+                ) : activeTab === 'overview' ? (
+                  <LayoutDashboard className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
                 ) : (
                   <FileSpreadsheet className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
                 )}
                 <span>
-                  {activeTab === 'settings'
-                    ? 'Thiết Lập Hệ Thống'
+                  {activeTab === 'settings_users'
+                    ? 'Thiết Lập Hệ Thống - Người Dùng'
+                    : activeTab === 'settings_master'
+                    ? 'Thiết Lập Hệ Thống - Master Data'
+                    : activeTab === 'overview'
+                    ? 'Tổng Quan'
                     : activeTab === 'report'
                     ? 'Báo Cáo Kế Toán'
                     : activeTab === 'driver'
@@ -710,8 +788,9 @@ export default function AccountantView({
         )}
       </div>
 
-      {/* 2. Filters bar */}
-      {activeTab !== 'settings' && (
+      {/* 2. Filters bar - trang Tổng Quan tự quản lý khoảng ngày riêng (xem xu hướng nhiều ngày,
+          không phải lọc theo 1 ca), nên không dùng chung bộ lọc ca/ngày/tài xế ở đây. */}
+      {activeTab !== 'settings_users' && activeTab !== 'settings_master' && activeTab !== 'overview' && (
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center gap-4 no-print shadow-xs">
         {/* Date Range Filter */}
         <DateRangePicker
@@ -778,8 +857,9 @@ export default function AccountantView({
       </div>
       )}
 
-      {activeTab === 'settings' ? (
+      {activeTab === 'settings_users' || activeTab === 'settings_master' ? (
         <AdminSettingsView
+          tab={activeTab === 'settings_master' ? 'config' : 'users'}
           accounts={accounts}
           configLists={configLists}
           onCreateAccount={onCreateAccount}
@@ -798,6 +878,8 @@ export default function AccountantView({
           onToggleNotePreset={onToggleNotePreset}
           onDeleteNotePreset={onDeleteNotePreset}
         />
+      ) : activeTab === 'overview' ? (
+        <DashboardOverview jobs={jobs} drivers={drivers} sizes={sizes} operations={operations} />
       ) : activeTab === 'report' ? (
         <AccountingReportPanel jobs={filteredJobs} rates={rates} subtitle={getShiftSubtitle()} />
       ) : activeTab === 'driver' ? (

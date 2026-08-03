@@ -117,6 +117,28 @@ export function todayVN(): string {
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+/** Ngày (giờ VN) của 1 timestamp bất kỳ, dạng "YYYY-MM-DD" - dùng để gom nhóm theo ngày lịch. */
+export function toVNDateStr(isoString: string): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).formatToParts(new Date(isoString));
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '01';
+  return `${get('year')}-${get('month')}-${get('day')}`;
+}
+
+/** Cộng/trừ n ngày (lịch) vào 1 chuỗi "YYYY-MM-DD", trả về cùng định dạng. */
+export function addDaysToDateStr(dateStr: string, n: number): string {
+  const { y, m, d } = parseDateParts(dateStr);
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+
+/** Số ngày (bao gồm cả 2 đầu) giữa 2 chuỗi "YYYY-MM-DD". */
+export function daysBetweenDateStr(fromDateStr: string, toDateStr: string): number {
+  const { y: y1, m: m1, d: d1 } = parseDateParts(fromDateStr);
+  const { y: y2, m: m2, d: d2 } = parseDateParts(toDateStr);
+  const ms = Date.UTC(y2, m2 - 1, d2) - Date.UTC(y1, m1 - 1, d1);
+  return Math.round(ms / 86400000) + 1;
+}
+
 /** True nếu jobDateStr rơi vào N ngày gần nhất (tính cả hôm nay) theo lịch giờ Việt Nam. */
 export function isJobInLastNDays(jobDateStr: string, n: number): boolean {
   const today = todayVN();

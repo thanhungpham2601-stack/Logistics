@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import {
-  Users, Plus, Trash2, Calculator,
-  Ship, Ruler, Wrench, Check, X, Loader2,
-  MessageSquareText, Repeat, Mail, Pencil,
+  Plus, Trash2, Calculator,
+  Ship, Ruler, Check, X, Loader2,
+  MessageSquareText, Repeat, Mail, Pencil, Search,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { Account, ConfigLists } from '../lib/api';
 import { UserRole } from '../types';
+import { stripDiacritics } from '../utils';
 
 interface AdminSettingsViewProps {
+  tab: 'users' | 'config';
   accounts: Account[];
   configLists: ConfigLists;
   onCreateAccount: (input: { username: string; fullName: string; role: UserRole; phone?: string; email?: string }) => Promise<void>;
@@ -34,6 +37,7 @@ const ROLE_LABEL: Record<UserRole, string> = {
 };
 
 export default function AdminSettingsView({
+  tab,
   accounts,
   configLists,
   onCreateAccount,
@@ -52,7 +56,6 @@ export default function AdminSettingsView({
   onToggleNotePreset,
   onDeleteNotePreset,
 }: AdminSettingsViewProps) {
-  const [tab, setTab] = useState<'users' | 'config'>('users');
   const [busy, setBusy] = useState(false);
   const [activeKey, setActiveKey] = useState<string | null>(null);
 
@@ -75,6 +78,30 @@ export default function AdminSettingsView({
   const [newRole, setNewRole] = useState<UserRole>('driver');
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [addUserErrors, setAddUserErrors] = useState<{ username?: string; fullName?: string }>({});
+
+  // Tìm kiếm + phân trang danh sách người dùng
+  const [userSearch, setUserSearch] = useState('');
+  const [userPage, setUserPage] = useState(0);
+  const USERS_PAGE_SIZE = 10;
+  const filteredAccounts = userSearch
+    ? accounts.filter((a) => {
+        const q = stripDiacritics(userSearch);
+        return (
+          stripDiacritics(a.fullName).includes(q) ||
+          stripDiacritics(a.username).includes(q) ||
+          (a.phone ? stripDiacritics(a.phone).includes(q) : false) ||
+          (a.email ? stripDiacritics(a.email).includes(q) : false)
+        );
+      })
+    : accounts;
+  const userTotalPages = Math.max(1, Math.ceil(filteredAccounts.length / USERS_PAGE_SIZE));
+  const safeUserPage = Math.min(userPage, userTotalPages - 1);
+  const pagedAccounts = filteredAccounts.slice(
+    safeUserPage * USERS_PAGE_SIZE,
+    safeUserPage * USERS_PAGE_SIZE + USERS_PAGE_SIZE
+  );
 
   // Sửa email (Gmail) cho tài khoản đã tồn tại - cần cho đăng nhập Google (chế độ real)
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
@@ -93,7 +120,12 @@ export default function AdminSettingsView({
 
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUsername.trim() || !newFullName.trim()) return;
+    const errors: { username?: string; fullName?: string } = {};
+    if (!newUsername.trim()) errors.username = 'Bắt buộc nhập tài khoản.';
+    if (!newFullName.trim()) errors.fullName = 'Bắt buộc nhập họ và tên.';
+    setAddUserErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+
     setBusy(true);
     try {
       await onCreateAccount({
@@ -108,6 +140,8 @@ export default function AdminSettingsView({
       setNewPhone('');
       setNewEmail('');
       setNewRole('driver');
+      setAddUserErrors({});
+      setShowAddUserModal(false);
     } finally {
       setBusy(false);
     }
@@ -191,92 +225,38 @@ export default function AdminSettingsView({
   return (
     <div className="flex-1 p-6 overflow-auto">
       <div className="space-y-6">
-        {/* Tabs */}
-        <div className="flex gap-2 border-b border-slate-200">
-          <button
-            onClick={() => setTab('users')}
-            className={`flex items-center space-x-2 px-4 py-2.5 text-sm font-bold rounded-t-lg cursor-pointer transition-all ${
-              tab === 'users' ? 'bg-white border border-b-0 border-slate-200 text-emerald-700' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>Người Dùng</span>
-          </button>
-          <button
-            onClick={() => setTab('config')}
-            className={`flex items-center space-x-2 px-4 py-2.5 text-sm font-bold rounded-t-lg cursor-pointer transition-all ${
-              tab === 'config' ? 'bg-white border border-b-0 border-slate-200 text-emerald-700' : 'text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Wrench className="w-4 h-4" />
-            <span>Danh Mục (Size / Tác nghiệp / Hãng tàu)</span>
-          </button>
-        </div>
-
         {tab === 'users' && (
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-6">
-            {/* Add user form */}
-            <form onSubmit={handleCreateAccount} className="grid md:grid-cols-6 gap-3 items-end bg-slate-50 border border-slate-200 rounded-xl p-4">
-              <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase">Tài khoản (username)</label>
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-6 space-y-4">
+            {/* Search + Add user */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex-1 min-w-[220px] relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
-                  value={newUsername}
-                  onChange={(e) => setNewUsername(e.target.value)}
-                  placeholder="vd: linh.nt"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  required
+                  type="text"
+                  value={userSearch}
+                  onChange={(e) => { setUserSearch(e.target.value); setUserPage(0); }}
+                  placeholder="Tìm theo tên, tài khoản, SĐT, email..."
+                  className="w-full bg-slate-50 border border-slate-200 focus:border-slate-300 rounded-lg pl-9 pr-9 py-2 text-sm focus:outline-none placeholder-slate-400 transition-colors"
                 />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase">Họ và tên</label>
-                <input
-                  value={newFullName}
-                  onChange={(e) => setNewFullName(e.target.value)}
-                  placeholder="Nguyễn Thị Linh"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  required
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase">Vai trò</label>
-                <select
-                  value={newRole}
-                  onChange={(e) => setNewRole(e.target.value as UserRole)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
-                >
-                  <option value="driver">Tài xế</option>
-                  <option value="accountant">Kế toán</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase">SĐT (tuỳ chọn)</label>
-                <input
-                  value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value)}
-                  placeholder="09xxxxxxxx"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase">Email Gmail (đăng nhập thật)</label>
-                <input
-                  type="email"
-                  value={newEmail}
-                  onChange={(e) => setNewEmail(e.target.value)}
-                  placeholder="ten@gmail.com"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
+                {userSearch && (
+                  <button
+                    type="button"
+                    onClick={() => { setUserSearch(''); setUserPage(0); }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <button
-                type="submit"
-                disabled={busy}
-                className="flex items-center justify-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-sm px-4 py-2 rounded-lg cursor-pointer"
+                type="button"
+                onClick={() => { setAddUserErrors({}); setShowAddUserModal(true); }}
+                className="flex items-center justify-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm px-4 py-2 rounded-lg cursor-pointer shrink-0"
               >
-                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                <span>Thêm</span>
+                <Plus className="w-4 h-4" />
+                <span>Thêm Người Dùng</span>
               </button>
-            </form>
+            </div>
 
             {/* User list */}
             <div className="overflow-x-auto">
@@ -293,7 +273,14 @@ export default function AdminSettingsView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {accounts.map((a) => (
+                  {pagedAccounts.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
+                        {userSearch ? 'Không tìm thấy người dùng phù hợp.' : 'Chưa có người dùng nào.'}
+                      </td>
+                    </tr>
+                  )}
+                  {pagedAccounts.map((a) => (
                     <tr key={a.id}>
                       <td className="py-2 pr-2 font-bold text-slate-800">{a.fullName}</td>
                       <td className="py-2 pr-2 font-mono text-slate-500">@{a.username}</td>
@@ -372,6 +359,134 @@ export default function AdminSettingsView({
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* Pagination */}
+            {filteredAccounts.length > USERS_PAGE_SIZE && (
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setUserPage((p) => Math.max(0, p - 1))}
+                  disabled={safeUserPage === 0}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" /> Trước
+                </button>
+                <span className="text-[11px] text-slate-500 font-bold font-mono">
+                  Trang {safeUserPage + 1}/{userTotalPages} ({filteredAccounts.length} người dùng)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setUserPage((p) => Math.min(userTotalPages - 1, p + 1))}
+                  disabled={safeUserPage >= userTotalPages - 1}
+                  className="flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  Sau <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {showAddUserModal && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 flex items-center justify-center p-4 backdrop-blur-xs">
+            <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl p-6 relative">
+              <button
+                type="button"
+                onClick={() => setShowAddUserModal(false)}
+                className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <h3 className="text-lg font-black text-slate-900 border-b border-slate-100 pb-3 mb-4">Thêm Người Dùng Mới</h3>
+
+              <form onSubmit={handleCreateAccount} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    Tài khoản (username) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    value={newUsername}
+                    onChange={(e) => { setNewUsername(e.target.value); if (addUserErrors.username) setAddUserErrors((p) => ({ ...p, username: undefined })); }}
+                    placeholder="vd: linh.nt"
+                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
+                      addUserErrors.username ? 'border-red-400 focus:ring-red-400' : 'border-slate-300 focus:ring-emerald-500'
+                    }`}
+                  />
+                  {addUserErrors.username && <p className="text-[11px] text-red-600 font-semibold">{addUserErrors.username}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">
+                    Họ và tên <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    value={newFullName}
+                    onChange={(e) => { setNewFullName(e.target.value); if (addUserErrors.fullName) setAddUserErrors((p) => ({ ...p, fullName: undefined })); }}
+                    placeholder="Nguyễn Thị Linh"
+                    className={`w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 ${
+                      addUserErrors.fullName ? 'border-red-400 focus:ring-red-400' : 'border-slate-300 focus:ring-emerald-500'
+                    }`}
+                  />
+                  {addUserErrors.fullName && <p className="text-[11px] text-red-600 font-semibold">{addUserErrors.fullName}</p>}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Vai trò</label>
+                  <select
+                    value={newRole}
+                    onChange={(e) => setNewRole(e.target.value as UserRole)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  >
+                    <option value="driver">Tài xế</option>
+                    <option value="accountant">Kế toán</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">SĐT (tuỳ chọn)</label>
+                    <input
+                      value={newPhone}
+                      onChange={(e) => setNewPhone(e.target.value)}
+                      placeholder="09xxxxxxxx"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Email Gmail (tuỳ chọn)</label>
+                    <input
+                      type="email"
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      placeholder="ten@gmail.com"
+                      className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400">Email Gmail dùng để đăng nhập thật qua Google - có thể gán sau trong danh sách.</p>
+
+                <div className="pt-2 flex justify-end gap-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddUserModal(false)}
+                    disabled={busy}
+                    className="px-4 py-2 border border-slate-300 rounded-lg text-slate-700 text-sm font-bold hover:bg-slate-50 cursor-pointer disabled:opacity-50"
+                  >
+                    Huỷ
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={busy}
+                    className="flex items-center justify-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-sm px-4 py-2 rounded-lg cursor-pointer"
+                  >
+                    {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                    <span>Thêm Người Dùng</span>
+                  </button>
+                </div>
+              </form>
             </div>
           </div>
         )}
