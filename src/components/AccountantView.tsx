@@ -12,7 +12,7 @@ import {
   LayoutDashboard, Database
 } from 'lucide-react';
 import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
-import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN, getAutoShift } from '../utils';
 import { ContainerSizeRow, OperationRateRow, OperationTypeRow, ReconciliationReportType, ReportReconciliationRow } from '../lib/supabaseTypes';
 import { Account, ConfigLists, fetchJobsPage, fetchReconciliations, upsertReconciliation } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
@@ -89,11 +89,6 @@ export default function AccountantView({
   onToggleNotePreset,
   onDeleteNotePreset
 }: AccountantViewProps) {
-  // Filter states - mặc định ngày hiện tại (giờ VN)
-  const [filterDate, setFilterDate] = useState(todayVN());
-  const [filterToDate, setFilterToDate] = useState(todayVN()); // Khi khác filterDate -> chế độ xem khoảng ngày
-  const [filterShift, setFilterShift] = useState<'day' | 'night'>('night');
-  const [filterDriver, setFilterDriver] = useState<string>('all');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [theme, setTheme] = useState<ThemeName>(getStoredTheme());
@@ -144,6 +139,40 @@ export default function AccountantView({
   const searchQuery = searchQueries[activeTab];
   const setSearchQuery = (value: string) => setSearchQueries((prev) => ({ ...prev, [activeTab]: value }));
 
+  // Mỗi tab giữ bộ lọc ngày/ca/tài xế riêng - đổi bộ lọc ở báo cáo này không được ảnh hưởng đến
+  // báo cáo khác (trước đây dùng chung 1 bộ lọc nên đổi tài xế/ngày/ca ở 1 báo cáo là 3 báo cáo
+  // tổng hợp còn lại cũng đổi theo, gây nhầm lẫn).
+  interface TabFilterState {
+    date: string;
+    toDate: string;
+    shift: 'day' | 'night';
+    driver: string;
+  }
+  const makeDefaultFilters = (): TabFilterState => ({ date: todayVN(), toDate: todayVN(), shift: 'night', driver: 'all' });
+  const [tabFilters, setTabFilters] = useState<Record<AccountantTab, TabFilterState>>({
+    overview: makeDefaultFilters(),
+    dashboard: makeDefaultFilters(),
+    report: makeDefaultFilters(),
+    driver: makeDefaultFilters(),
+    nang_ha: makeDefaultFilters(),
+    dao_chuyen: makeDefaultFilters(),
+    settings_users: makeDefaultFilters(),
+    settings_master: makeDefaultFilters(),
+  });
+  const currentFilters = tabFilters[activeTab];
+  const filterDate = currentFilters.date;
+  const filterToDate = currentFilters.toDate;
+  const filterShift = currentFilters.shift;
+  const filterDriver = currentFilters.driver;
+  const setFilterDate = (value: string) =>
+    setTabFilters((prev) => ({ ...prev, [activeTab]: { ...prev[activeTab], date: value } }));
+  const setFilterToDate = (value: string) =>
+    setTabFilters((prev) => ({ ...prev, [activeTab]: { ...prev[activeTab], toDate: value } }));
+  const setFilterShift = (value: 'day' | 'night') =>
+    setTabFilters((prev) => ({ ...prev, [activeTab]: { ...prev[activeTab], shift: value } }));
+  const setFilterDriver = (value: string) =>
+    setTabFilters((prev) => ({ ...prev, [activeTab]: { ...prev[activeTab], driver: value } }));
+
   const setActiveTab = (tab: AccountantTab) => {
     const path: Record<AccountantTab, string> = {
       overview: '/accountant/tong-quan',
@@ -177,7 +206,6 @@ export default function AccountantView({
   const [formLine, setFormLine] = useState('');
   const [formSize, setFormSize] = useState<ContainerSize>('');
   const [formOperation, setFormOperation] = useState<OperationType>('nang_khach_hang');
-  const [formShift, setFormShift] = useState<'day' | 'night'>('day');
   const [formCargoStatus, setFormCargoStatus] = useState<'rong' | 'hang'>('hang');
   const [formSubType, setFormSubType] = useState<string>('');
   const [formNotes, setFormNotes] = useState('');
@@ -265,7 +293,6 @@ export default function AccountantView({
     setFormLine(shippingLines[0] ?? '');
     setFormSize(sizes[0]?.code ?? '');
     setFormOperation(operations[0]?.code ?? 'nang_khach_hang');
-    setFormShift(filterShift === 'night' ? 'night' : 'day');
     setFormCargoStatus('hang');
     setFormSubType(configLists.daoChuyenSubtypes[0]?.code ?? '');
     setFormNotes('');
@@ -286,7 +313,6 @@ export default function AccountantView({
     setFormLine(job.line);
     setFormSize(job.size);
     setFormOperation(job.operation);
-    setFormShift(job.shift);
     setFormCargoStatus(job.cargoStatus);
     setFormSubType(job.subType ?? configLists.daoChuyenSubtypes[0]?.code ?? '');
     setFormNotes(job.notes || '');
@@ -310,7 +336,9 @@ export default function AccountantView({
       driverId: formDriverId,
       driverName: selectedDriverObj.name,
       timestamp: new Date(formTime).toISOString(),
-      shift: formShift,
+      // Ca làm việc tự suy ra từ thời gian thực hiện - không cho chọn tay riêng để tránh lệch
+      // (vd: chọn "ca ngày" nhưng thời gian ghi lại là ban đêm).
+      shift: getAutoShift(new Date(formTime)),
       containerNo: formContainerNo.trim().toUpperCase(),
       line: formLine,
       size: formSize,
@@ -1253,19 +1281,9 @@ export default function AccountantView({
                 </div>
               )}
 
-              {/* Shift & cargo status */}
+              {/* Container status & thời gian thực hiện - ca làm việc tự suy ra từ thời gian này
+                  (hiển thị dạng nhãn), không cho chọn tay riêng để tránh lệch với dữ liệu thật. */}
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700 uppercase">Ca làm việc *</label>
-                  <select
-                    value={formShift}
-                    onChange={(e) => setFormShift(e.target.value as 'day' | 'night')}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
-                  >
-                    <option value="day">Ca ngày (7h-19h)</option>
-                    <option value="night">Ca đêm (19h-7h)</option>
-                  </select>
-                </div>
                 <div className="space-y-1">
                   <label className="block text-xs font-bold text-slate-700 uppercase">Container *</label>
                   <select
@@ -1277,18 +1295,27 @@ export default function AccountantView({
                     <option value="rong">Rỗng</option>
                   </select>
                 </div>
-              </div>
-
-              {/* Time */}
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-700 uppercase">Thời gian thực hiện *</label>
-                <input
-                  type="datetime-local"
-                  value={formTime}
-                  onChange={(e) => setFormTime(e.target.value)}
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
-                  required
-                />
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">Thời gian *</label>
+                    {formTime && (
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                          getAutoShift(new Date(formTime)) === 'day' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'
+                        }`}
+                      >
+                        {getAutoShift(new Date(formTime)) === 'day' ? 'Ca ngày' : 'Ca đêm'}
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="datetime-local"
+                    value={formTime}
+                    onChange={(e) => setFormTime(e.target.value)}
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
+                    required
+                  />
+                </div>
               </div>
 
               {/* Notes */}

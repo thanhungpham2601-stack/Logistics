@@ -74,6 +74,14 @@ export function validateContainerNumber(num: string): boolean {
   return /^[A-Z]{4}\d{7}$/.test(clean);
 }
 
+/** Ca tự nhận diện theo giờ Việt Nam hiện tại: 07:00-18:59 = ca ngày, còn lại = ca đêm. */
+export function getAutoShift(date: Date): 'day' | 'night' {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(date)
+  );
+  return hour >= 7 && hour < 19 ? 'day' : 'night';
+}
+
 /**
  * Check if a date-time falls within a specific shift (giờ Việt Nam cố định).
  * filterDateStr là ngày ghi trên báo cáo:

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
 import { ContainerSizeRow, DaoChuyenSubtypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, isJobInLastNDays, validateContainerNumber, stripDiacritics } from '../utils';
+import { formatDateTime, isJobInLastNDays, validateContainerNumber, stripDiacritics, getAutoShift } from '../utils';
 
 interface DriverViewProps {
   currentDriver: Driver;
@@ -24,12 +24,10 @@ interface DriverViewProps {
   onDeleteJob: (jobId: string) => Promise<void>;
 }
 
-/** Ca tự nhận diện theo giờ Việt Nam hiện tại: 07:00-18:59 = ca ngày, còn lại = ca đêm. */
-function getAutoShift(date: Date): Shift {
-  const hour = Number(
-    new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(date)
-  );
-  return hour >= 7 && hour < 19 ? 'day' : 'night';
+/** Định dạng Date thành chuỗi "YYYY-MM-DDTHH:mm" theo giờ địa phương - dùng cho input datetime-local. */
+function toDatetimeLocalValue(date: Date): string {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
 }
 
 // Icon và bảng màu cho từng loại tác nghiệp - áp dụng vòng lặp theo thứ tự cấu hình
@@ -73,7 +71,10 @@ export default function DriverView({
   const [isCustomLineMode, setIsCustomLineMode] = useState(false);
   const [selectedSize, setSelectedSize] = useState<ContainerSize>(sizes[0]?.code ?? '');
   const [selectedOperation, setSelectedOperation] = useState<OperationType>(operations[0]?.code ?? 'nang_khach_hang');
-  const [selectedShift, setSelectedShift] = useState<Shift>(() => getAutoShift(new Date()));
+  // Rỗng = dùng giờ hiện tại (tự cập nhật theo currentTime); có giá trị = tài xế tự chọn lại thời
+  // điểm (ghi nhận muộn) - ca làm việc luôn tự suy ra từ thời điểm này, không cho chọn tay riêng
+  // để tránh lệch (vd: chọn "ca ngày" nhưng giờ tạo thực tế lại là ca đêm).
+  const [manualTimestamp, setManualTimestamp] = useState('');
   const [selectedCargoStatus, setSelectedCargoStatus] = useState<CargoStatus>('hang');
   const [selectedSubType, setSelectedSubType] = useState<string>(daoChuyenSubtypes[0]?.code ?? '');
   const [notes, setNotes] = useState('');
@@ -94,6 +95,13 @@ export default function DriverView({
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Thời điểm ghi nhận: mặc định giờ hiện tại (tự chạy theo currentTime), hoặc thời điểm tài xế
+  // tự chọn lại (ghi nhận muộn) - giới hạn không quá 3 ngày trước, không được chọn tương lai.
+  const effectiveTimestamp = manualTimestamp ? new Date(manualTimestamp) : currentTime;
+  const effectiveShift: Shift = getAutoShift(effectiveTimestamp);
+  const minAllowedTimestamp = new Date();
+  minAllowedTimestamp.setDate(minAllowedTimestamp.getDate() - 3);
 
   // Filter jobs submitted by THIS driver, chỉ hiển thị 3 ngày gần nhất (theo lịch giờ VN)
   const myJobs = jobs
@@ -142,11 +150,18 @@ export default function DriverView({
       return;
     }
 
+    // Chốt chặn phòng vệ - input datetime-local đã có min/max nhưng không phải trình duyệt
+    // nào cũng ép cứng được, nên kiểm tra lại trước khi lưu.
+    if (isNaN(effectiveTimestamp.getTime()) || effectiveTimestamp > currentTime || effectiveTimestamp < minAllowedTimestamp) {
+      setErrorWarning('Thời điểm thực hiện không hợp lệ - không được chọn tương lai hoặc quá 3 ngày trước.');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       await onAddJob({
-        timestamp: new Date().toISOString(),
-        shift: selectedShift,
+        timestamp: effectiveTimestamp.toISOString(),
+        shift: effectiveShift,
         containerNo: finalContainerNo,
         line: finalLine,
         size: selectedSize,
@@ -159,6 +174,7 @@ export default function DriverView({
       // Reset Form
       setContainerNo('');
       setNotes('');
+      setManualTimestamp('');
       setErrorWarning(null);
       setSuccessMessage(`Đã chấm công thành công công ${finalContainerNo}!`);
 
@@ -295,37 +311,45 @@ export default function DriverView({
             <p className="text-xs text-slate-500">Chọn chính xác thông tin container để chấm công chuẩn</p>
           </div>
 
-          {/* 0. Shift */}
+          {/* 0. Thời điểm thực hiện - ca làm việc tự suy ra từ thời điểm này, không cho chọn tay
+              riêng để tránh lệch (vd: chọn "ca ngày" nhưng giờ tạo thực tế lại là ca đêm). */}
           <div className="space-y-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-              Ca Làm Việc
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => setSelectedShift('day')}
-                className={`py-2.5 flex items-center justify-center gap-1.5 font-bold text-xs rounded-xl border-2 transition-all cursor-pointer ${
-                  selectedShift === 'day'
-                    ? 'bg-amber-500 border-amber-500 text-white shadow-md shadow-amber-500/30'
-                    : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                Thời Điểm Thực Hiện
+              </label>
+              <span
+                className={`flex items-center gap-1 px-2.5 py-1 text-[11px] font-bold rounded-full ${
+                  effectiveShift === 'day' ? 'bg-amber-100 text-amber-700' : 'bg-indigo-100 text-indigo-700'
                 }`}
               >
-                <Sun className="w-4 h-4" />
-                <span>Ca ngày (7h-19h)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSelectedShift('night')}
-                className={`py-2.5 flex items-center justify-center gap-1.5 font-bold text-xs rounded-xl border-2 transition-all cursor-pointer ${
-                  selectedShift === 'night'
-                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-500/30'
-                    : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                }`}
-              >
-                <Moon className="w-4 h-4" />
-                <span>Ca đêm (19h-7h)</span>
-              </button>
+                {effectiveShift === 'day' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+                <span>{effectiveShift === 'day' ? 'Ca ngày' : 'Ca đêm'}</span>
+              </span>
             </div>
+            <div className="flex gap-2">
+              <input
+                type="datetime-local"
+                value={manualTimestamp || toDatetimeLocalValue(currentTime)}
+                min={toDatetimeLocalValue(minAllowedTimestamp)}
+                max={toDatetimeLocalValue(currentTime)}
+                onChange={(e) => setManualTimestamp(e.target.value)}
+                className="flex-1 min-w-0 bg-white border-2 border-slate-300 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-600"
+              />
+              {manualTimestamp && (
+                <button
+                  type="button"
+                  onClick={() => setManualTimestamp('')}
+                  className="px-3 py-2 text-xs font-bold rounded-xl border-2 border-slate-300 text-slate-600 hover:border-slate-400 cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  Bây giờ
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-slate-500 flex items-center gap-1">
+              <Info className="w-3 h-3 shrink-0" />
+              <span>Mặc định dùng giờ hiện tại. Chỉ chỉnh lại nếu ghi nhận muộn, tối đa 3 ngày trước.</span>
+            </p>
           </div>
 
           {/* 1. Container Number */}
