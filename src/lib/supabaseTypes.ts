@@ -48,6 +48,8 @@ export interface JobEntryRow {
   operation_code: OperationType;
   cargo_status: CargoStatus;
   sub_type: string | null;
+  equipment_code: string | null;
+  container_type_code: string | null;
   notes: string | null;
   created_by: string;
   created_at: string;
@@ -64,6 +66,20 @@ export interface OperationRateRow {
 }
 
 export interface DaoChuyenSubtypeRow {
+  code: string;
+  label: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface EquipmentTypeRow {
+  code: string;
+  label: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
+export interface ContainerTypeRow {
   code: string;
   label: string;
   sort_order: number;

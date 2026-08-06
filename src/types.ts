@@ -36,6 +36,8 @@ export interface JobEntry {
   operation: OperationType;
   cargoStatus: CargoStatus;
   subType?: string; // Phân loại đảo chuyển (khach_hang, xuat_tau, sua_chua, don_bai, giam_dinh) - chỉ áp dụng cho operation = dao_chuyen
+  equipment?: string; // Thiết bị sử dụng (loại xe tài xế điều khiển) - vd: R39, RC54
+  containerType?: string; // Loại container - vd: lanh, kho, ho_mai
   notes?: string;
 }
 

@@ -2,7 +2,9 @@ import { supabase } from './supabase';
 import { CargoStatus, ContainerSize, Driver, JobEntry, OperationType, Shift, UserRole } from '../types';
 import {
   ContainerSizeRow,
+  ContainerTypeRow,
   DaoChuyenSubtypeRow,
+  EquipmentTypeRow,
   JobEntryRow,
   NotePresetRow,
   OperationRateRow,
@@ -30,6 +32,8 @@ export interface ConfigLists {
   lines: ShippingLineRow[];
   daoChuyenSubtypes: DaoChuyenSubtypeRow[];
   notePresets: NotePresetRow[];
+  equipmentTypes: EquipmentTypeRow[];
+  containerTypes: ContainerTypeRow[];
 }
 
 function profileToAccount(row: ProfileRow): Account {
@@ -67,6 +71,8 @@ function jobRowToEntry(row: JobEntryRow, driverName: string): JobEntry {
     operation: row.operation_code,
     cargoStatus: row.cargo_status,
     subType: row.sub_type ?? undefined,
+    equipment: row.equipment_code ?? undefined,
+    containerType: row.container_type_code ?? undefined,
     notes: row.notes ?? '',
   };
 }
@@ -163,12 +169,14 @@ export async function linkAuthUserId(accountId: string, authUserId: string): Pro
 // ===================== CONFIG (sizes / operations / lines) =====================
 
 export async function fetchConfigLists(): Promise<ConfigLists> {
-  const [sizesRes, opsRes, linesRes, subtypesRes, notePresetsRes] = await Promise.all([
+  const [sizesRes, opsRes, linesRes, subtypesRes, notePresetsRes, equipmentRes, containerTypesRes] = await Promise.all([
     supabase.from('container_sizes').select('*').order('sort_order'),
     supabase.from('operation_types').select('*').order('sort_order'),
     supabase.from('shipping_lines').select('*').order('sort_order'),
     supabase.from('dao_chuyen_subtypes').select('*').order('sort_order'),
     supabase.from('note_presets').select('*').order('sort_order'),
+    supabase.from('equipment_types').select('*').order('sort_order'),
+    supabase.from('container_types').select('*').order('sort_order'),
   ]);
 
   if (sizesRes.error) throw sizesRes.error;
@@ -176,6 +184,8 @@ export async function fetchConfigLists(): Promise<ConfigLists> {
   if (linesRes.error) throw linesRes.error;
   if (subtypesRes.error) throw subtypesRes.error;
   if (notePresetsRes.error) throw notePresetsRes.error;
+  if (equipmentRes.error) throw equipmentRes.error;
+  if (containerTypesRes.error) throw containerTypesRes.error;
 
   return {
     sizes: sizesRes.data as ContainerSizeRow[],
@@ -183,6 +193,8 @@ export async function fetchConfigLists(): Promise<ConfigLists> {
     lines: linesRes.data as ShippingLineRow[],
     daoChuyenSubtypes: subtypesRes.data as DaoChuyenSubtypeRow[],
     notePresets: notePresetsRes.data as NotePresetRow[],
+    equipmentTypes: equipmentRes.data as EquipmentTypeRow[],
+    containerTypes: containerTypesRes.data as ContainerTypeRow[],
   };
 }
 
@@ -198,6 +210,26 @@ export async function upsertDaoChuyenSubtype(row: { code: string; label: string;
 
 export async function setDaoChuyenSubtypeActive(code: string, isActive: boolean): Promise<void> {
   const { error } = await supabase.from('dao_chuyen_subtypes').update({ is_active: isActive }).eq('code', code);
+  if (error) throw error;
+}
+
+export async function upsertEquipmentType(row: { code: string; label: string; sort_order?: number }): Promise<void> {
+  const { error } = await supabase.from('equipment_types').upsert(row, { onConflict: 'code' });
+  if (error) throw error;
+}
+
+export async function setEquipmentTypeActive(code: string, isActive: boolean): Promise<void> {
+  const { error } = await supabase.from('equipment_types').update({ is_active: isActive }).eq('code', code);
+  if (error) throw error;
+}
+
+export async function upsertContainerType(row: { code: string; label: string; sort_order?: number }): Promise<void> {
+  const { error } = await supabase.from('container_types').upsert(row, { onConflict: 'code' });
+  if (error) throw error;
+}
+
+export async function setContainerTypeActive(code: string, isActive: boolean): Promise<void> {
+  const { error } = await supabase.from('container_types').update({ is_active: isActive }).eq('code', code);
   if (error) throw error;
 }
 
@@ -315,6 +347,8 @@ export async function createJob(input: {
   operation: OperationType;
   cargoStatus: CargoStatus;
   subType?: string;
+  equipment?: string;
+  containerType?: string;
   notes?: string;
 }): Promise<void> {
   const { error } = await supabase.from('job_entries').insert({
@@ -328,6 +362,8 @@ export async function createJob(input: {
     operation_code: input.operation,
     cargo_status: input.cargoStatus,
     sub_type: input.subType ?? null,
+    equipment_code: input.equipment ?? null,
+    container_type_code: input.containerType ?? null,
     notes: input.notes ?? '',
   });
 
@@ -346,6 +382,8 @@ export async function updateJob(
     operation: OperationType;
     cargoStatus: CargoStatus;
     subType: string | null;
+    equipment: string | null;
+    containerType: string | null;
     notes: string;
   }>
 ): Promise<void> {
@@ -361,6 +399,8 @@ export async function updateJob(
       ...(patch.operation !== undefined ? { operation_code: patch.operation } : {}),
       ...(patch.cargoStatus !== undefined ? { cargo_status: patch.cargoStatus } : {}),
       ...(patch.subType !== undefined ? { sub_type: patch.subType } : {}),
+      ...(patch.equipment !== undefined ? { equipment_code: patch.equipment } : {}),
+      ...(patch.containerType !== undefined ? { container_type_code: patch.containerType } : {}),
       ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
     })
     .eq('id', id);

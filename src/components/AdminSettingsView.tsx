@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Calculator,
   Ship, Ruler, Check, X, Loader2,
   MessageSquareText, Repeat, Mail, Pencil, Search,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Forklift, Container,
 } from 'lucide-react';
 import { Account, ConfigLists } from '../lib/api';
 import { UserRole } from '../types';
@@ -25,6 +25,10 @@ interface AdminSettingsViewProps {
   onAddOperationType: (code: string, label: string) => Promise<void>;
   onAddDaoChuyenSubtype: (code: string, label: string) => Promise<void>;
   onToggleDaoChuyenSubtype: (code: string, isActive: boolean) => Promise<void>;
+  onAddEquipmentType: (code: string, label: string) => Promise<void>;
+  onToggleEquipmentType: (code: string, isActive: boolean) => Promise<void>;
+  onAddContainerType: (code: string, label: string) => Promise<void>;
+  onToggleContainerType: (code: string, isActive: boolean) => Promise<void>;
   onAddNotePreset: (label: string) => Promise<void>;
   onToggleNotePreset: (id: string, isActive: boolean) => Promise<void>;
   onDeleteNotePreset: (id: string) => Promise<void>;
@@ -52,6 +56,10 @@ export default function AdminSettingsView({
   onAddOperationType,
   onAddDaoChuyenSubtype,
   onToggleDaoChuyenSubtype,
+  onAddEquipmentType,
+  onToggleEquipmentType,
+  onAddContainerType,
+  onToggleContainerType,
   onAddNotePreset,
   onToggleNotePreset,
   onDeleteNotePreset,
@@ -116,6 +124,10 @@ export default function AdminSettingsView({
   const [newOpLabel, setNewOpLabel] = useState('');
   const [newSubtypeCode, setNewSubtypeCode] = useState('');
   const [newSubtypeLabel, setNewSubtypeLabel] = useState('');
+  const [newEquipmentCode, setNewEquipmentCode] = useState('');
+  const [newEquipmentLabel, setNewEquipmentLabel] = useState('');
+  const [newContainerTypeCode, setNewContainerTypeCode] = useState('');
+  const [newContainerTypeLabel, setNewContainerTypeLabel] = useState('');
   const [newNoteLabel, setNewNoteLabel] = useState('');
 
   const handleCreateAccount = async (e: React.FormEvent) => {
@@ -205,6 +217,32 @@ export default function AdminSettingsView({
       await onAddDaoChuyenSubtype(newSubtypeCode.trim().toLowerCase().replace(/\s+/g, '_'), newSubtypeLabel.trim());
       setNewSubtypeCode('');
       setNewSubtypeLabel('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddEquipment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newEquipmentCode.trim() || !newEquipmentLabel.trim()) return;
+    setBusy(true);
+    try {
+      await onAddEquipmentType(newEquipmentCode.trim().toUpperCase(), newEquipmentLabel.trim());
+      setNewEquipmentCode('');
+      setNewEquipmentLabel('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddContainerType = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newContainerTypeCode.trim() || !newContainerTypeLabel.trim()) return;
+    setBusy(true);
+    try {
+      await onAddContainerType(newContainerTypeCode.trim().toLowerCase().replace(/\s+/g, '_'), newContainerTypeLabel.trim());
+      setNewContainerTypeCode('');
+      setNewContainerTypeLabel('');
     } finally {
       setBusy(false);
     }
@@ -646,6 +684,84 @@ export default function AdminSettingsView({
                       className={`cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${st.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
                     >
                       {activeKey === `subtype-${st.code}` ? <Loader2 className="w-4 h-4 animate-spin" /> : st.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Equipment types (thiet bi su dung - loai xe tai xe dieu khien) */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 space-y-3">
+              <h3 className="text-xs font-black uppercase text-slate-500 flex items-center space-x-1.5">
+                <Forklift className="w-4 h-4 text-indigo-500" />
+                <span>Thiết Bị Sử Dụng</span>
+              </h3>
+              <form onSubmit={handleAddEquipment} className="flex gap-1.5">
+                <input
+                  value={newEquipmentCode}
+                  onChange={(e) => setNewEquipmentCode(e.target.value)}
+                  placeholder="Mã (vd: R39)"
+                  className="w-1/2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                />
+                <input
+                  value={newEquipmentLabel}
+                  onChange={(e) => setNewEquipmentLabel(e.target.value)}
+                  placeholder="Tên hiển thị"
+                  className="w-1/2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                />
+                <button type="submit" disabled={busy} className="p-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg cursor-pointer">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </form>
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {configLists.equipmentTypes.map((eq) => (
+                  <div key={eq.code} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2 py-1.5">
+                    <span className="font-bold text-slate-700">{eq.label}</span>
+                    <button
+                      onClick={() => runAction(`equipment-${eq.code}`, () => onToggleEquipmentType(eq.code, !eq.is_active))}
+                      disabled={busy}
+                      className={`cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${eq.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
+                    >
+                      {activeKey === `equipment-${eq.code}` ? <Loader2 className="w-4 h-4 animate-spin" /> : eq.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Container types (loai container - lanh / kho / ho mai) */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 space-y-3">
+              <h3 className="text-xs font-black uppercase text-slate-500 flex items-center space-x-1.5">
+                <Container className="w-4 h-4 text-sky-500" />
+                <span>Loại Container</span>
+              </h3>
+              <form onSubmit={handleAddContainerType} className="flex gap-1.5">
+                <input
+                  value={newContainerTypeCode}
+                  onChange={(e) => setNewContainerTypeCode(e.target.value)}
+                  placeholder="Mã (vd: lanh)"
+                  className="w-1/2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                />
+                <input
+                  value={newContainerTypeLabel}
+                  onChange={(e) => setNewContainerTypeLabel(e.target.value)}
+                  placeholder="Tên hiển thị"
+                  className="w-1/2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                />
+                <button type="submit" disabled={busy} className="p-1.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg cursor-pointer">
+                  <Plus className="w-4 h-4" />
+                </button>
+              </form>
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {configLists.containerTypes.map((ct) => (
+                  <div key={ct.code} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2 py-1.5">
+                    <span className="font-bold text-slate-700">{ct.label}</span>
+                    <button
+                      onClick={() => runAction(`container-type-${ct.code}`, () => onToggleContainerType(ct.code, !ct.is_active))}
+                      disabled={busy}
+                      className={`cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${ct.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
+                    >
+                      {activeKey === `container-type-${ct.code}` ? <Loader2 className="w-4 h-4 animate-spin" /> : ct.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                     </button>
                   </div>
                 ))}

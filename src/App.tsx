@@ -25,14 +25,18 @@ import {
   fetchOperationRates,
   linkAuthUserId,
   setContainerSizeActive,
+  setContainerTypeActive,
   setDaoChuyenSubtypeActive,
+  setEquipmentTypeActive,
   setNotePresetActive,
   setOperationTypeActive,
   setShippingLineActive,
   updateAccount,
   updateJob,
   upsertContainerSize,
+  upsertContainerType,
   upsertDaoChuyenSubtype,
+  upsertEquipmentType,
   upsertOperationType,
   upsertShippingLine,
 } from './lib/api';
@@ -63,7 +67,7 @@ export default function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [jobs, setJobs] = useState<JobEntry[]>([]);
-  const [configLists, setConfigLists] = useState<ConfigLists>({ sizes: [], operations: [], lines: [], daoChuyenSubtypes: [], notePresets: [] });
+  const [configLists, setConfigLists] = useState<ConfigLists>({ sizes: [], operations: [], lines: [], daoChuyenSubtypes: [], notePresets: [], equipmentTypes: [], containerTypes: [] });
   const [rates, setRates] = useState<OperationRateRow[]>([]);
 
   const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
@@ -229,6 +233,8 @@ export default function App() {
       operation: payload.operation,
       cargoStatus: payload.cargoStatus,
       subType: payload.subType,
+      equipment: payload.equipment,
+      containerType: payload.containerType,
       notes: payload.notes,
     });
     await refreshJobs();
@@ -248,6 +254,8 @@ export default function App() {
       operation: job.operation,
       cargoStatus: job.cargoStatus,
       subType: job.subType,
+      equipment: job.equipment,
+      containerType: job.containerType,
       notes: job.notes,
     });
     await refreshJobs();
@@ -264,6 +272,8 @@ export default function App() {
       operation: job.operation,
       cargoStatus: job.cargoStatus,
       subType: job.subType ?? null,
+      equipment: job.equipment ?? null,
+      containerType: job.containerType ?? null,
       notes: job.notes,
     });
     await refreshJobs();
@@ -336,6 +346,26 @@ export default function App() {
     await refreshConfig();
   };
 
+  const handleAddEquipmentType = async (code: string, label: string) => {
+    await upsertEquipmentType({ code, label });
+    await refreshConfig();
+  };
+
+  const handleToggleEquipmentType = async (code: string, isActive: boolean) => {
+    await setEquipmentTypeActive(code, isActive);
+    await refreshConfig();
+  };
+
+  const handleAddContainerType = async (code: string, label: string) => {
+    await upsertContainerType({ code, label });
+    await refreshConfig();
+  };
+
+  const handleToggleContainerType = async (code: string, isActive: boolean) => {
+    await setContainerTypeActive(code, isActive);
+    await refreshConfig();
+  };
+
   const handleAddNotePreset = async (label: string) => {
     await createNotePreset(label);
     await refreshConfig();
@@ -404,6 +434,8 @@ export default function App() {
               operations={configLists.operations.filter((o) => o.is_active)}
               daoChuyenSubtypes={configLists.daoChuyenSubtypes.filter((s) => s.is_active)}
               notePresets={configLists.notePresets.filter((n) => n.is_active)}
+              equipmentTypes={configLists.equipmentTypes.filter((e) => e.is_active)}
+              containerTypes={configLists.containerTypes.filter((c) => c.is_active)}
               onAddJob={handleAddJob}
               onUpdateJob={handleUpdateJob}
               onDeleteJob={handleDeleteJob}
@@ -444,6 +476,10 @@ export default function App() {
               onAddOperationType={handleAddOperationType}
               onAddDaoChuyenSubtype={handleAddDaoChuyenSubtype}
               onToggleDaoChuyenSubtype={handleToggleDaoChuyenSubtype}
+              onAddEquipmentType={handleAddEquipmentType}
+              onToggleEquipmentType={handleToggleEquipmentType}
+              onAddContainerType={handleAddContainerType}
+              onToggleContainerType={handleToggleContainerType}
               onAddNotePreset={handleAddNotePreset}
               onToggleNotePreset={handleToggleNotePreset}
               onDeleteNotePreset={handleDeleteNotePreset}

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
+import { DatePicker } from 'antd';
+import dayjs from 'dayjs';
 import {
   FileSpreadsheet, Printer, Download, Plus,
   Trash2, Edit,
@@ -54,6 +56,10 @@ interface AccountantViewProps {
   onAddOperationType: (code: string, label: string) => Promise<void>;
   onAddDaoChuyenSubtype: (code: string, label: string) => Promise<void>;
   onToggleDaoChuyenSubtype: (code: string, isActive: boolean) => Promise<void>;
+  onAddEquipmentType: (code: string, label: string) => Promise<void>;
+  onToggleEquipmentType: (code: string, isActive: boolean) => Promise<void>;
+  onAddContainerType: (code: string, label: string) => Promise<void>;
+  onToggleContainerType: (code: string, isActive: boolean) => Promise<void>;
   onAddNotePreset: (label: string) => Promise<void>;
   onToggleNotePreset: (id: string, isActive: boolean) => Promise<void>;
   onDeleteNotePreset: (id: string) => Promise<void>;
@@ -85,6 +91,10 @@ export default function AccountantView({
   onAddOperationType,
   onAddDaoChuyenSubtype,
   onToggleDaoChuyenSubtype,
+  onAddEquipmentType,
+  onToggleEquipmentType,
+  onAddContainerType,
+  onToggleContainerType,
   onAddNotePreset,
   onToggleNotePreset,
   onDeleteNotePreset
@@ -208,6 +218,8 @@ export default function AccountantView({
   const [formOperation, setFormOperation] = useState<OperationType>('nang_khach_hang');
   const [formCargoStatus, setFormCargoStatus] = useState<'rong' | 'hang'>('hang');
   const [formSubType, setFormSubType] = useState<string>('');
+  const [formEquipment, setFormEquipment] = useState<string>('');
+  const [formContainerType, setFormContainerType] = useState<string>('');
   const [formNotes, setFormNotes] = useState('');
   const [formTime, setFormTime] = useState('');
 
@@ -295,6 +307,8 @@ export default function AccountantView({
     setFormOperation(operations[0]?.code ?? 'nang_khach_hang');
     setFormCargoStatus('hang');
     setFormSubType(configLists.daoChuyenSubtypes[0]?.code ?? '');
+    setFormEquipment(configLists.equipmentTypes[0]?.code ?? '');
+    setFormContainerType(configLists.containerTypes[0]?.code ?? '');
     setFormNotes('');
 
     // Set default current date/time in local timezone for datetime-local input
@@ -315,6 +329,8 @@ export default function AccountantView({
     setFormOperation(job.operation);
     setFormCargoStatus(job.cargoStatus);
     setFormSubType(job.subType ?? configLists.daoChuyenSubtypes[0]?.code ?? '');
+    setFormEquipment(job.equipment ?? configLists.equipmentTypes[0]?.code ?? '');
+    setFormContainerType(job.containerType ?? configLists.containerTypes[0]?.code ?? '');
     setFormNotes(job.notes || '');
 
     // Format timestamp for datetime-local
@@ -345,6 +361,8 @@ export default function AccountantView({
       operation: formOperation,
       cargoStatus: formCargoStatus,
       subType: formOperation === 'dao_chuyen' ? formSubType || undefined : undefined,
+      equipment: formEquipment || undefined,
+      containerType: formContainerType || undefined,
       notes: formNotes.trim()
     };
 
@@ -902,6 +920,10 @@ export default function AccountantView({
           onAddOperationType={onAddOperationType}
           onAddDaoChuyenSubtype={onAddDaoChuyenSubtype}
           onToggleDaoChuyenSubtype={onToggleDaoChuyenSubtype}
+          onAddEquipmentType={onAddEquipmentType}
+          onToggleEquipmentType={onToggleEquipmentType}
+          onAddContainerType={onAddContainerType}
+          onToggleContainerType={onToggleContainerType}
           onAddNotePreset={onAddNotePreset}
           onToggleNotePreset={onToggleNotePreset}
           onDeleteNotePreset={onDeleteNotePreset}
@@ -1266,9 +1288,42 @@ export default function AccountantView({
                 </select>
               </div>
 
+              {(configLists.equipmentTypes.length > 0 || configLists.containerTypes.length > 0) && (
+                <div className="grid grid-cols-2 gap-3">
+                  {configLists.containerTypes.length > 0 && (
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700 uppercase">Loại container *</label>
+                      <select
+                        value={formContainerType}
+                        onChange={(e) => setFormContainerType(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
+                      >
+                        {configLists.containerTypes.map((ct) => (
+                          <option key={ct.code} value={ct.code}>{ct.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  {configLists.equipmentTypes.length > 0 && (
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700 uppercase">Thiết bị sử dụng *</label>
+                      <select
+                        value={formEquipment}
+                        onChange={(e) => setFormEquipment(e.target.value)}
+                        className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
+                      >
+                        {configLists.equipmentTypes.map((eq) => (
+                          <option key={eq.code} value={eq.code}>{eq.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {formOperation === 'dao_chuyen' && configLists.daoChuyenSubtypes.length > 0 && (
                 <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700 uppercase">Phân loại đảo chuyển</label>
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Phân loại đảo chuyển *</label>
                   <select
                     value={formSubType}
                     onChange={(e) => setFormSubType(e.target.value)}
@@ -1308,12 +1363,13 @@ export default function AccountantView({
                       </span>
                     )}
                   </div>
-                  <input
-                    type="datetime-local"
-                    value={formTime}
-                    onChange={(e) => setFormTime(e.target.value)}
-                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
-                    required
+                  <DatePicker
+                    showTime={{ format: 'HH:mm' }}
+                    format="DD/MM/YYYY HH:mm"
+                    value={formTime ? dayjs(formTime) : null}
+                    onChange={(date) => setFormTime(date ? date.format('YYYY-MM-DDTHH:mm') : '')}
+                    allowClear={false}
+                    className="w-full !h-[38px] !rounded-lg !border !border-slate-300"
                   />
                 </div>
               </div>

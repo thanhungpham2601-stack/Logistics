@@ -24,7 +24,7 @@ Cần khách hàng cung cấp hoặc tự thao tác trên:
 
 ## 2. Chạy migration để tạo schema (bảng dữ liệu)
 
-Vào **SQL Editor** trong Supabase Dashboard, chạy **lần lượt theo đúng thứ tự** 4 file trong
+Vào **SQL Editor** trong Supabase Dashboard, chạy **lần lượt theo đúng thứ tự** 6 file trong
 thư mục `supabase/migrations/` của repo:
 
 1. `0001_init.sql` — tạo toàn bộ bảng gốc (tài khoản, chấm công, danh mục...)
@@ -32,6 +32,10 @@ thư mục `supabase/migrations/` của repo:
    liệu chấm công giả**)
 3. `0003_reports_and_shift.sql` — bổ sung ca làm việc, phân loại đảo chuyển, ghi chú, bảng đối soát
 4. `0004_auth_email.sql` — thêm cột `email` để đăng nhập Google
+5. `0005_equipment_types.sql` — thêm danh mục "Thiết Bị Sử Dụng" (loại xe tài xế điều khiển, vd
+   R39/RC54) và cột `equipment_code` trên bảng chấm công
+6. `0006_container_types.sql` — thêm danh mục "Loại Container" (Lạnh/Khô/Hở mái) và cột
+   `container_type_code` trên bảng chấm công
 
 > ⚠️ **Quan trọng về `0002_seed.sql`**: file này có 2 phần khác nhau:
 > - Phần **danh mục** (size, loại tác nghiệp, hãng tàu) — **nên giữ lại**, dùng làm điểm khởi đầu,
