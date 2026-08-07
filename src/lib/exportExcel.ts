@@ -177,6 +177,36 @@ export async function exportShiftReportToExcel(params: ExportShiftReportParams):
   totalNotesCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
   totalNotesCell.border = THIN_BORDER;
 
+  // Khối ký tên - đúng mẫu công ty: 2 cột song song "LÁI XE" (trái) và "ICD TÂN CẢNG HẢI PHÒNG"
+  // (phải), mỗi bên đều có "(Ký và ghi rõ họ tên)" bên dưới.
+  const signatureMidCol = Math.ceil(totalCols / 2);
+  const signatureLabelRowIdx = totalRowIdx + 2;
+  const signatureSubRowIdx = signatureLabelRowIdx + 1;
+
+  sheet.mergeCells(signatureLabelRowIdx, 1, signatureLabelRowIdx, signatureMidCol);
+  const driverLabelCell = sheet.getCell(signatureLabelRowIdx, 1);
+  driverLabelCell.value = 'LÁI XE';
+  driverLabelCell.font = { bold: true, size: 11 };
+  driverLabelCell.alignment = { horizontal: 'center' };
+
+  sheet.mergeCells(signatureSubRowIdx, 1, signatureSubRowIdx, signatureMidCol);
+  const driverSubCell = sheet.getCell(signatureSubRowIdx, 1);
+  driverSubCell.value = '(Ký và ghi rõ họ tên)';
+  driverSubCell.font = { size: 10 };
+  driverSubCell.alignment = { horizontal: 'center' };
+
+  sheet.mergeCells(signatureLabelRowIdx, signatureMidCol + 1, signatureLabelRowIdx, totalCols);
+  const companyLabelCell = sheet.getCell(signatureLabelRowIdx, signatureMidCol + 1);
+  companyLabelCell.value = 'ICD AN GIA';
+  companyLabelCell.font = { bold: true, size: 11 };
+  companyLabelCell.alignment = { horizontal: 'center' };
+
+  sheet.mergeCells(signatureSubRowIdx, signatureMidCol + 1, signatureSubRowIdx, totalCols);
+  const companySubCell = sheet.getCell(signatureSubRowIdx, signatureMidCol + 1);
+  companySubCell.value = '(Ký và ghi rõ họ tên)';
+  companySubCell.font = { size: 10 };
+  companySubCell.alignment = { horizontal: 'center' };
+
   sheet.getColumn(1).width = 6;
   sheet.getColumn(2).width = 18;
   sheet.getColumn(3).width = 16;

@@ -6,12 +6,13 @@ import {
   Truck, Clock, ClipboardList, CheckCircle2,
   Trash2, LogOut, ChevronRight, ChevronLeft, AlertTriangle,
   Plus, Check, RotateCw, Settings, Loader2, Info, Search,
-  Edit, X, Sun, Moon, Package, PackageOpen, Forklift, Menu
+  Edit, X, Sun, Moon, Package, PackageOpen, Forklift, Menu, Download
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
 import { ContainerSizeRow, ContainerTypeRow, DaoChuyenSubtypeRow, EquipmentTypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, isJobInLastNDays, isJobInDateRange, validateContainerNumber, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInDateRange, isJobInShift, validateContainerNumber, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
 import DateRangePicker from './DateRangePicker';
+import { exportShiftReportToExcel } from '../lib/exportExcel';
 
 interface DriverViewProps {
   currentDriver: Driver;
@@ -100,6 +101,9 @@ export default function DriverView({
   const [historyPage, setHistoryPage] = useState(0);
   const [historyFromDate, setHistoryFromDate] = useState(() => addDaysToDateStr(todayVN(), -2));
   const [historyToDate, setHistoryToDate] = useState(() => todayVN());
+  const [exportDate, setExportDate] = useState(() => todayVN());
+  const [exportShift, setExportShift] = useState<'day' | 'night'>('day');
+  const [isExporting, setIsExporting] = useState(false);
   const isBusy = isSubmitting || deletingJobId !== null;
 
   const isContainerValid = validateContainerNumber(containerNo);
@@ -212,6 +216,36 @@ export default function DriverView({
       setErrorWarning('Có lỗi khi lưu chấm công, vui lòng thử lại.');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Xuất báo cáo ca ra Excel - đúng mẫu công ty (giống hệt bản admin/kế toán export), nhưng chỉ
+  // gồm lượt của chính tài xế này, lọc theo 1 ngày + 1 ca cụ thể (không có chế độ khoảng ngày).
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+      const jobsForExport = jobs.filter(
+        (job) => job.driverId === currentDriver.id && isJobInShift(job.timestamp, exportDate, exportShift)
+      );
+      const formattedDate = formatDateOnly(exportDate);
+      let subtitle: string;
+      if (exportShift === 'night') {
+        const nextDateObj = new Date(`${exportDate}T12:00:00Z`);
+        nextDateObj.setUTCDate(nextDateObj.getUTCDate() + 1);
+        subtitle = `Ca đêm 19:00 ${formattedDate} - 07:00 ${formatDateOnly(nextDateObj.toISOString())}`;
+      } else {
+        subtitle = `Ca ngày 07:00 ${formattedDate} - 19:00 ${formattedDate}`;
+      }
+      await exportShiftReportToExcel({
+        jobs: jobsForExport,
+        sizes,
+        operations,
+        subtitle,
+        driverLabel: currentDriver.name,
+        filenamePrefix: `Bao_Cao_Ca_${exportDate}_${exportShift}_${stripDiacritics(currentDriver.name).replace(/\s+/g, '_')}`,
+      });
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -746,6 +780,52 @@ export default function DriverView({
 
         {driverTab === 'list' && (
         <>
+        {/* Xuất báo cáo ca - chọn 1 ngày + 1 ca, xuất đúng mẫu Excel công ty (chỉ dữ liệu của tôi) */}
+        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
+          <h3 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
+            <Download className="w-4.5 h-4.5" style={{ color: 'var(--theme-primary)' }} />
+            <span>Xuất Báo Cáo Ca (Excel)</span>
+          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <DatePicker
+              format="DD/MM/YYYY"
+              value={dayjs(exportDate)}
+              onChange={(date) => date && setExportDate(date.format('YYYY-MM-DD'))}
+              allowClear={false}
+              className="!h-[38px] !rounded-lg !border-2 !border-slate-300"
+            />
+            <div className="flex items-center bg-slate-100 border border-slate-300 rounded-lg p-1">
+              <button
+                type="button"
+                onClick={() => setExportShift('day')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                  exportShift === 'day' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Ca ngày (7h-19h)
+              </button>
+              <button
+                type="button"
+                onClick={() => setExportShift('night')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                  exportShift === 'night' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                Ca đêm (19h-7h)
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={isExporting}
+              className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs px-3.5 py-2 rounded-lg shadow-sm cursor-pointer"
+            >
+              {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              <span>{isExporting ? 'Đang xuất...' : 'Tải Excel'}</span>
+            </button>
+          </div>
+        </div>
+
         {/* Driver's History in this Shift */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
           <div className="flex justify-between items-center border-b border-slate-200 pb-3">
