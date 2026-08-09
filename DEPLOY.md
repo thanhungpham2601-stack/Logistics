@@ -53,8 +53,8 @@ thư mục `supabase/migrations/` của repo:
 
 ## 3. Tạo tài khoản thật cho khách hàng
 
-Vẫn tạm dùng **chế độ dev** (xem mục 6) để đăng nhập lần đầu bằng 1 tài khoản admin, việc đơn giản
-nhất là chèn thẳng 1 dòng admin qua SQL Editor để có tài khoản vào được hệ thống lần đầu:
+Ứng dụng chỉ đăng nhập được qua Google, nên cần chèn sẵn 1 dòng admin gắn đúng **Email Gmail thật**
+của khách hàng qua SQL Editor trước, để họ đăng nhập Google lần đầu là vào được hệ thống:
 
 ```sql
 insert into profiles (username, full_name, role, email)
@@ -100,11 +100,8 @@ Trên nơi deploy (Vercel → Project Settings → Environment Variables), đặ
 |---|---|
 | `VITE_SUPABASE_URL` | Project URL Supabase mới (bước 1) |
 | `VITE_SUPABASE_ANON_KEY` | anon/publishable key mới (bước 1) |
-| `VITE_AUTH_MODE` | `real` |
 
-Đặt `VITE_AUTH_MODE=real` sẽ **khoá hẳn về đăng nhập Google**, ẩn luôn màn hình chọn chế độ và lối
-vào chế độ dev — đúng như yêu cầu "sau này sẽ xóa chức năng dev": không cần sửa code, chỉ cần biến
-môi trường này.
+Ứng dụng chỉ hỗ trợ đăng nhập bằng Google (Supabase Auth) — không còn chế độ dev/mock.
 
 File `.env` ở máy dev hiện tại (đang trỏ vào Supabase/Google của bạn) **không dùng cho bản deploy
 thật** — chỉ dùng để bạn tiếp tục test cục bộ. Trên Vercel phải khai báo lại 3 biến ở trên trỏ đúng
@@ -114,12 +111,12 @@ vào project Supabase/Google **của khách hàng**.
 
 Repo đã có sẵn `vercel.json` (rewrite cho SPA), chỉ cần:
 1. Kết nối repo GitHub với Vercel (hoặc deploy thủ công `vercel --prod`).
-2. Đảm bảo 3 biến môi trường ở bước 6 đã khai báo trên Vercel **trước khi build**.
+2. Đảm bảo 2 biến môi trường ở bước 6 đã khai báo trên Vercel **trước khi build**.
 3. Deploy.
 
 ## 8. Kiểm tra sau khi deploy
 
-- [ ] Vào domain thật → phải vào thẳng màn hình "Đăng nhập bằng Google" (không thấy màn hình chọn
+- [ ] Vào domain thật → phải vào thẳng màn hình "Đăng nhập bằng Google" (không còn màn hình chọn
       chế độ hay danh sách tài khoản mock)
 - [ ] Đăng nhập bằng đúng 1 email đã gán cho admin → vào đúng Bảng Điều Khiển
 - [ ] Thử đăng nhập bằng 1 Gmail **chưa** được gán → phải bị từ chối với thông báo rõ ràng

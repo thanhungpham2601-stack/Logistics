@@ -1,9 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { Driver, JobEntry, UserRole } from './types';
-import LoginScreen from './components/LoginScreen';
 import GoogleLoginScreen from './components/GoogleLoginScreen';
-import AuthModeSelect from './components/AuthModeSelect';
 import DriverView from './components/DriverView';
 import AccountantView from './components/AccountantView';
 import { Loader2 } from 'lucide-react';
@@ -49,13 +47,6 @@ const CURRENT_ACCOUNT_KEY = 'icd_current_account_id';
 // không chỉ trong lúc đang mở tab.
 const EXPLICIT_LOGOUT_KEY = 'icd_explicit_logout';
 
-// Chế độ đăng nhập:
-//  - 'dev'  (mặc định): hiện màn hình cho CHỌN 1 trong 2 - "Nhà phát triển" (tài khoản mock,
-//    không mật khẩu thật) hoặc "Thật" (đăng nhập Google) - dùng trong giai đoạn kiểm thử song song.
-//  - 'real': khoá hẳn, bỏ qua màn hình chọn, luôn bắt đăng nhập Google. Đặt VITE_AUTH_MODE=real
-//    trên môi trường thật (VD: Vercel) khi đã sẵn sàng bỏ hẳn chế độ dev.
-const AUTH_MODE: 'dev' | 'real' = import.meta.env.VITE_AUTH_MODE === 'real' ? 'real' : 'dev';
-
 function homePathFor(account: Account): string {
   return account.role === 'driver' ? '/driver' : '/accountant';
 }
@@ -77,9 +68,6 @@ export default function App() {
   // hoặc khi tự làm mới token. Cờ này chặn việc tự đăng nhập lại ngay sau khi người dùng chủ
   // động bấm Đăng xuất, tránh vòng lặp "đăng xuất xong lại tự vào lại".
   const isLoggingOutRef = useRef(false);
-  // 'select' = màn hình 2 nút chọn chế độ; chỉ dùng khi AUTH_MODE === 'dev'.
-  // Khi AUTH_MODE === 'real', khoá cứng về 'real' ngay từ đầu, bỏ qua màn hình chọn.
-  const [loginView, setLoginView] = useState<'select' | 'dev' | 'real'>(AUTH_MODE === 'real' ? 'real' : 'select');
   const navigate = useNavigate();
 
   const loadAll = async () => {
@@ -94,17 +82,8 @@ export default function App() {
     setJobs(jobsData);
     setConfigLists(configData);
     setRates(ratesData);
-
-    // Chế độ dev: khôi phục session từ localStorage (chỉ để tiện phát triển, không phải bảo mật
-    // thật). Chế độ real: KHÔNG tin localStorage - phiên đăng nhập chỉ hợp lệ khi Supabase Auth
-    // xác nhận có session Google thật (xử lý ở effect riêng bên dưới).
-    if (AUTH_MODE === 'dev') {
-      const savedId = localStorage.getItem(CURRENT_ACCOUNT_KEY);
-      if (savedId) {
-        const restored = accountsData.find((a) => a.id === savedId && a.isActive);
-        if (restored) setCurrentAccount(restored);
-      }
-    }
+    // KHÔNG tin localStorage cho phiên đăng nhập - phiên chỉ hợp lệ khi Supabase Auth xác nhận
+    // có session Google thật (xử lý ở effect riêng bên dưới).
   };
 
   useEffect(() => {
@@ -114,8 +93,6 @@ export default function App() {
   }, []);
 
   // ===================== Xác thực qua Google (Supabase Auth) =====================
-  // Luôn lắng nghe (không chỉ khi AUTH_MODE === 'real') vì ở chế độ 'dev' người dùng vẫn có thể
-  // chọn "Chế Độ Thật" từ màn hình chọn để đăng nhập Google.
   useEffect(() => {
     // getSession() (chạy khi mount) và sự kiện SIGNED_IN của onAuthStateChange thường bắn gần như
     // cùng lúc cho CÙNG 1 session vừa đăng nhập - chặn resolve trùng để tránh lần gọi sau ghi đè
@@ -196,26 +173,18 @@ export default function App() {
     setConfigLists(await fetchConfigLists());
   };
 
-  const handleLogin = (account: Account) => {
-    setCurrentAccount(account);
-    localStorage.setItem(CURRENT_ACCOUNT_KEY, account.id);
-    navigate(homePathFor(account), { replace: true });
-  };
-
   const handleLogout = async () => {
     isLoggingOutRef.current = true;
     setCurrentAccount(null);
     localStorage.removeItem(CURRENT_ACCOUNT_KEY);
-    if (AUTH_MODE === 'real') {
-      localStorage.setItem(EXPLICIT_LOGOUT_KEY, '1');
-      await supabase.auth.signOut();
-      // Dọn sạch tay mọi session Supabase còn sót lại trong localStorage (phòng khi signOut()
-      // không xoá kịp do lỗi mạng/race) - đảm bảo tải lại trang sau khi đăng xuất (VD: gõ lại
-      // URL, xoá bớt "/login") chắc chắn không tự đăng nhập lại vì đọc thấy session cũ.
-      Object.keys(localStorage)
-        .filter((key) => key.startsWith('sb-'))
-        .forEach((key) => localStorage.removeItem(key));
-    }
+    localStorage.setItem(EXPLICIT_LOGOUT_KEY, '1');
+    await supabase.auth.signOut();
+    // Dọn sạch tay mọi session Supabase còn sót lại trong localStorage (phòng khi signOut()
+    // không xoá kịp do lỗi mạng/race) - đảm bảo tải lại trang sau khi đăng xuất (VD: gõ lại
+    // URL, xoá bớt "/login") chắc chắn không tự đăng nhập lại vì đọc thấy session cũ.
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith('sb-'))
+      .forEach((key) => localStorage.removeItem(key));
     navigate('/login', { replace: true });
   };
 
@@ -390,6 +359,17 @@ export default function App() {
     );
   }
 
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 max-w-md text-center space-y-2">
+          <p className="text-red-300 font-bold">Không kết nối được Supabase</p>
+          <p className="text-xs text-red-400/80">{loadError}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <Routes>
       <Route
@@ -397,25 +377,14 @@ export default function App() {
         element={
           currentAccount ? (
             <Navigate to={homePathFor(currentAccount)} replace />
-          ) : loginView === 'select' ? (
-            <AuthModeSelect onSelectDev={() => setLoginView('dev')} onSelectReal={() => setLoginView('real')} />
-          ) : loginView === 'real' ? (
+          ) : (
             <GoogleLoginScreen
               resolving={resolvingAuth}
               authError={authError}
-              onBack={AUTH_MODE === 'dev' ? () => setLoginView('select') : undefined}
               onBeforeSignIn={() => {
                 isLoggingOutRef.current = false;
                 localStorage.removeItem(EXPLICIT_LOGOUT_KEY);
               }}
-            />
-          ) : (
-            <LoginScreen
-              accounts={accounts}
-              loading={false}
-              loadError={loadError}
-              onLogin={handleLogin}
-              onBack={() => setLoginView('select')}
             />
           )
         }
