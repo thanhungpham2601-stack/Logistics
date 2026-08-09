@@ -59,6 +59,30 @@ select {
   padding-right: 2.25rem !important;
 }
 
+@keyframes vn-route-dash {
+  to {
+    stroke-dashoffset: -160;
+  }
+}
+
+@keyframes vn-map-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.vn-route-line {
+  animation: vn-route-dash 6s linear infinite;
+}
+
+.vn-map-glow {
+  animation: vn-map-glow 5s ease-in-out infinite;
+}
+
 @layer utilities {
   /* Print Styles for clean paper presentation */
   @media print {

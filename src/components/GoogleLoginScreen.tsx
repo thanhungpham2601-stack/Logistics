@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Anchor, Loader2, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import VietnamMapBackground from './VietnamMapBackground';
 
 interface GoogleLoginScreenProps {
   resolving: boolean;
@@ -39,6 +40,9 @@ export default function GoogleLoginScreen({ resolving, authError, onBack, onBefo
     <div className="min-h-screen bg-radial from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col justify-between font-sans relative overflow-hidden">
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px]" />
       <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[120px]" />
+      <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+        <VietnamMapBackground className="w-[420px] sm:w-[560px] h-auto opacity-70" />
+      </div>
 
       <header className="pt-12 px-4 text-center z-10 relative">
         {onBack && (
