@@ -44,10 +44,11 @@ interface AccountantViewProps {
   // Admin settings (only rendered when isAdmin)
   accounts: Account[];
   configLists: ConfigLists;
-  onCreateAccount: (input: { username: string; fullName: string; role: UserRole; phone?: string; licenseNumber?: string; email?: string }) => Promise<void>;
+  onCreateAccount: (input: { username: string; fullName: string; role: UserRole; phone?: string; licenseNumber?: string; email?: string }) => Promise<Account>;
   onToggleAccountActive: (id: string, isActive: boolean) => Promise<void>;
   onDeleteAccount: (id: string) => Promise<void>;
   onUpdateAccountEmail: (id: string, email: string) => Promise<void>;
+  onSetDriverPin: (accountId: string, pin: string) => Promise<void>;
   onAddShippingLine: (code: string, name: string) => Promise<void>;
   onToggleShippingLine: (code: string, isActive: boolean) => Promise<void>;
   onAddContainerSize: (code: string, label: string) => Promise<void>;
@@ -83,6 +84,7 @@ export default function AccountantView({
   onToggleAccountActive,
   onDeleteAccount,
   onUpdateAccountEmail,
+  onSetDriverPin,
   onAddShippingLine,
   onToggleShippingLine,
   onAddContainerSize,
@@ -912,6 +914,7 @@ export default function AccountantView({
           onToggleAccountActive={onToggleAccountActive}
           onDeleteAccount={onDeleteAccount}
           onUpdateAccountEmail={onUpdateAccountEmail}
+          onSetDriverPin={onSetDriverPin}
           onAddShippingLine={onAddShippingLine}
           onToggleShippingLine={onToggleShippingLine}
           onAddContainerSize={onAddContainerSize}
@@ -976,7 +979,7 @@ export default function AccountantView({
       <>
       {/* 3. The Report View (Matching the requested template) */}
       <div className="flex-1 p-6 overflow-auto">
-        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs min-w-[1200px] print:border-none print:shadow-none print:p-0">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs min-w-[1200px] print:border-none print:shadow-none print:p-0 print:min-w-0 print:w-full">
           
           {/* Paper Title Header */}
           <div className="text-center mb-6 space-y-1">
@@ -1186,7 +1189,7 @@ export default function AccountantView({
 
             <div className="space-y-16">
               <div>
-                <p className="uppercase tracking-wider">ICD AN GIA</p>
+                <p className="uppercase tracking-wider">ICD TÂN CẢNG HẢI PHÒNG</p>
                 <p className="text-[10px] text-slate-500 font-normal italic">(Ký và ghi rõ họ tên)</p>
               </div>
               <p className="text-sm font-extrabold italic text-slate-400">

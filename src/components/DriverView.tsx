@@ -228,13 +228,18 @@ export default function DriverView({
         (job) => job.driverId === currentDriver.id && isJobInShift(job.timestamp, exportDate, exportShift)
       );
       const formattedDate = formatDateOnly(exportDate);
+      const dotDate = formattedDate.replace(/\//g, '.'); // "DD/MM/YYYY" -> "DD.MM.YYYY" (dùng cho tên file, "/" không hợp lệ trong tên file)
       let subtitle: string;
+      let filenamePrefix: string;
       if (exportShift === 'night') {
         const nextDateObj = new Date(`${exportDate}T12:00:00Z`);
         nextDateObj.setUTCDate(nextDateObj.getUTCDate() + 1);
-        subtitle = `Ca đêm 19:00 ${formattedDate} - 07:00 ${formatDateOnly(nextDateObj.toISOString())}`;
+        const formattedNextDate = formatDateOnly(nextDateObj.toISOString());
+        subtitle = `Ca đêm 19:00 ${formattedDate} - 07:00 ${formattedNextDate}`;
+        filenamePrefix = `Sản lượng Ca đêm ${dotDate}_${formattedNextDate.replace(/\//g, '.')} ICD Tân Cảng - ${exportDate}`;
       } else {
         subtitle = `Ca ngày 07:00 ${formattedDate} - 19:00 ${formattedDate}`;
+        filenamePrefix = `Sản lượng Ca ngày ${dotDate} ICD Tân Cảng - ${exportDate}`;
       }
       await exportShiftReportToExcel({
         jobs: jobsForExport,
@@ -242,7 +247,7 @@ export default function DriverView({
         operations,
         subtitle,
         driverLabel: currentDriver.name,
-        filenamePrefix: `Bao_Cao_Ca_${exportDate}_${exportShift}_${stripDiacritics(currentDriver.name).replace(/\s+/g, '_')}`,
+        filenamePrefix,
       });
     } finally {
       setIsExporting(false);

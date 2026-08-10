@@ -144,6 +144,21 @@ export async function deleteAccount(id: string): Promise<void> {
   if (error) throw error;
 }
 
+// ===================== MÃ PIN TÀI XẾ (chuyển ca nhanh trên iPad dùng chung) =====================
+
+/** Admin đặt/đổi mã PIN 4 số cho 1 tài xế. */
+export async function setDriverPin(accountId: string, pin: string): Promise<void> {
+  const { error } = await supabase.rpc('set_driver_pin', { p_account_id: accountId, p_pin: pin });
+  if (error) throw error;
+}
+
+/** Kiểm tra mã PIN khi tài xế chọn tên + nhập PIN để chuyển ca. */
+export async function verifyDriverPin(accountId: string, pin: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('verify_driver_pin', { p_account_id: accountId, p_pin: pin });
+  if (error) throw error;
+  return data === true;
+}
+
 // ===================== ĐĂNG NHẬP GOOGLE (chế độ "real") =====================
 
 /** Tìm tài khoản đã từng đăng nhập Google trước đó (đã gắn auth_user_id). */

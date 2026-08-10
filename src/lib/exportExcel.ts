@@ -11,11 +11,26 @@ const COLOR_SUBHEADER = 'FFFFF2CC';
 const COLOR_MATCH = 'FFFEF3C7';
 const COLOR_TOTAL = 'FFF2F2F2';
 
+// Luôn in vừa 1 trang khổ A4 ngang theo chiều rộng (fitToWidth: 1) - chiều cao không giới hạn
+// (fitToHeight: 0) vì số dòng dữ liệu có thể nhiều hơn 1 trang, chỉ cần không bị cắt CỘT.
+const PRINT_PAGE_SETUP: Partial<ExcelJS.PageSetup> = {
+  paperSize: 9, // A4
+  orientation: 'landscape',
+  fitToPage: true,
+  fitToWidth: 1,
+  fitToHeight: 0,
+  horizontalCentered: true,
+  margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+};
+
+// 'medium' chứ không phải 'thin' - báo cáo có thể lên tới hàng chục cột (nhiều loại tác nghiệp x
+// size), khi co ép vừa 1 trang A4 ngang (PRINT_PAGE_SETUP.fitToWidth) đường kẻ 'thin' (hairline)
+// bị co nhỏ tới mức khi in không còn hiện ra, nhìn như mất hẳn cột phân cách.
 const THIN_BORDER = {
-  top: { style: 'thin' as const, color: { argb: 'FF000000' } },
-  left: { style: 'thin' as const, color: { argb: 'FF000000' } },
-  bottom: { style: 'thin' as const, color: { argb: 'FF000000' } },
-  right: { style: 'thin' as const, color: { argb: 'FF000000' } },
+  top: { style: 'medium' as const, color: { argb: 'FF000000' } },
+  left: { style: 'medium' as const, color: { argb: 'FF000000' } },
+  bottom: { style: 'medium' as const, color: { argb: 'FF000000' } },
+  right: { style: 'medium' as const, color: { argb: 'FF000000' } },
 };
 
 interface ExportShiftReportParams {
@@ -33,6 +48,7 @@ export async function exportShiftReportToExcel(params: ExportShiftReportParams):
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Bao cao ca');
+  sheet.pageSetup = { ...PRINT_PAGE_SETUP };
 
   const leadingCols = 6; // TT, Ngay, Container, Lines, Hang, Size
   const subColsCount = sizes.length * operations.length;
@@ -197,7 +213,7 @@ export async function exportShiftReportToExcel(params: ExportShiftReportParams):
 
   sheet.mergeCells(signatureLabelRowIdx, signatureMidCol + 1, signatureLabelRowIdx, totalCols);
   const companyLabelCell = sheet.getCell(signatureLabelRowIdx, signatureMidCol + 1);
-  companyLabelCell.value = 'ICD AN GIA';
+  companyLabelCell.value = 'ICD TÂN CẢNG HẢI PHÒNG';
   companyLabelCell.font = { bold: true, size: 11 };
   companyLabelCell.alignment = { horizontal: 'center' };
 
@@ -257,6 +273,7 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Bao cao tong hop');
+  sheet.pageSetup = { ...PRINT_PAGE_SETUP };
 
   const leadingCols = 2; // Hãng tàu, Tác nghiệp
   const dataCols = blocks.length * sizes.length;
@@ -487,6 +504,7 @@ function addDriverSummarySheet(
 ): void {
   const { rows, operations, grandShifts, grandCounts, grandTotal, title, subtitle } = params;
   const sheet = workbook.addWorksheet('Tổng hợp theo tài xế');
+  sheet.pageSetup = { ...PRINT_PAGE_SETUP };
 
   const totalCols = 2 + operations.length + 1;
 
@@ -567,6 +585,7 @@ function addDriverSummarySheet(
 function addShiftSummarySheet(workbook: ExcelJS.Workbook, params: { rows: ShiftSummaryRow[]; subtitle: string }): void {
   const { rows, subtitle } = params;
   const sheet = workbook.addWorksheet('Tổng hợp theo ca');
+  sheet.pageSetup = { ...PRINT_PAGE_SETUP };
 
   const totalCols = 6;
   sheet.mergeCells(1, 1, 1, totalCols);

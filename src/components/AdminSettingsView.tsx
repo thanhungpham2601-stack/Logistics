@@ -3,7 +3,7 @@ import {
   Plus, Trash2, Calculator,
   Ship, Ruler, Check, X, Loader2,
   MessageSquareText, Repeat, Mail, Pencil, Search,
-  ChevronLeft, ChevronRight, Forklift, Container,
+  ChevronLeft, ChevronRight, Forklift, Container, KeyRound,
 } from 'lucide-react';
 import { Account, ConfigLists } from '../lib/api';
 import { UserRole } from '../types';
@@ -13,10 +13,11 @@ interface AdminSettingsViewProps {
   tab: 'users' | 'config';
   accounts: Account[];
   configLists: ConfigLists;
-  onCreateAccount: (input: { username: string; fullName: string; role: UserRole; phone?: string; email?: string }) => Promise<void>;
+  onCreateAccount: (input: { username: string; fullName: string; role: UserRole; phone?: string; email?: string }) => Promise<Account>;
   onToggleAccountActive: (id: string, isActive: boolean) => Promise<void>;
   onDeleteAccount: (id: string) => Promise<void>;
   onUpdateAccountEmail: (id: string, email: string) => Promise<void>;
+  onSetDriverPin: (accountId: string, pin: string) => Promise<void>;
   onAddShippingLine: (code: string, name: string) => Promise<void>;
   onToggleShippingLine: (code: string, isActive: boolean) => Promise<void>;
   onAddContainerSize: (code: string, label: string) => Promise<void>;
@@ -48,6 +49,7 @@ export default function AdminSettingsView({
   onToggleAccountActive,
   onDeleteAccount,
   onUpdateAccountEmail,
+  onSetDriverPin,
   onAddShippingLine,
   onToggleShippingLine,
   onAddContainerSize,
@@ -86,8 +88,9 @@ export default function AdminSettingsView({
   const [newRole, setNewRole] = useState<UserRole>('driver');
   const [newPhone, setNewPhone] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newPin, setNewPin] = useState('');
   const [showAddUserModal, setShowAddUserModal] = useState(false);
-  const [addUserErrors, setAddUserErrors] = useState<{ username?: string; fullName?: string }>({});
+  const [addUserErrors, setAddUserErrors] = useState<{ username?: string; fullName?: string; pin?: string }>({});
 
   // Tìm kiếm + phân trang danh sách người dùng
   const [userSearch, setUserSearch] = useState('');
@@ -115,6 +118,11 @@ export default function AdminSettingsView({
   const [editingEmailId, setEditingEmailId] = useState<string | null>(null);
   const [editingEmailValue, setEditingEmailValue] = useState('');
 
+  // Đổi mã PIN cho tài xế đã có sẵn (dùng để chuyển ca nhanh trên iPad dùng chung)
+  const [editingPinId, setEditingPinId] = useState<string | null>(null);
+  const [editingPinValue, setEditingPinValue] = useState('');
+  const [editingPinError, setEditingPinError] = useState('');
+
   // New config item forms
   const [newLineCode, setNewLineCode] = useState('');
   const [newLineName, setNewLineName] = useState('');
@@ -132,28 +140,62 @@ export default function AdminSettingsView({
 
   const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    const errors: { username?: string; fullName?: string } = {};
+    const errors: { username?: string; fullName?: string; pin?: string } = {};
     if (!newUsername.trim()) errors.username = 'Bắt buộc nhập tài khoản.';
     if (!newFullName.trim()) errors.fullName = 'Bắt buộc nhập họ và tên.';
+    if (newRole === 'driver' && !/^[0-9]{4}$/.test(newPin)) errors.pin = 'Mã PIN phải gồm đúng 4 chữ số.';
     setAddUserErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
     setBusy(true);
     try {
-      await onCreateAccount({
+      const account = await onCreateAccount({
         username: newUsername.trim(),
         fullName: newFullName.trim(),
         role: newRole,
         phone: newPhone.trim() || undefined,
         email: newEmail.trim() || undefined,
       });
+      if (newRole === 'driver') {
+        try {
+          await onSetDriverPin(account.id, newPin);
+        } catch (pinErr) {
+          // Tài khoản đã tạo thành công, chỉ riêng bước đặt PIN lỗi (thường do chưa chạy
+          // migration 0007_driver_pin.sql trên Supabase) - báo rõ để không tưởng nhầm là
+          // form "không phản hồi gì".
+          setAddUserErrors({ pin: `Đã tạo tài khoản nhưng đặt PIN thất bại: ${(pinErr as Error).message ?? pinErr}` });
+          return;
+        }
+      }
       setNewUsername('');
       setNewFullName('');
       setNewPhone('');
       setNewEmail('');
+      setNewPin('');
       setNewRole('driver');
       setAddUserErrors({});
       setShowAddUserModal(false);
+    } catch (err) {
+      setAddUserErrors({ username: (err as Error).message ?? String(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSavePin = async (id: string) => {
+    if (busy) return;
+    if (!/^[0-9]{4}$/.test(editingPinValue)) {
+      setEditingPinError('Mã PIN phải gồm đúng 4 chữ số.');
+      return;
+    }
+    setBusy(true);
+    try {
+      await onSetDriverPin(id, editingPinValue);
+      setEditingPinId(null);
+      setEditingPinValue('');
+      setEditingPinError('');
+    } catch (err) {
+      setEditingPinError((err as Error).message ?? String(err));
     } finally {
       setBusy(false);
     }
@@ -382,16 +424,60 @@ export default function AdminSettingsView({
                         </button>
                       </td>
                       <td className="py-2 pr-2 text-right">
-                        <button
-                          onClick={() => {
-                            if (busy) return;
-                            if (confirm(`Xoá tài khoản ${a.fullName}?`)) runAction(`del-acc-${a.id}`, () => onDeleteAccount(a.id));
-                          }}
-                          disabled={busy}
-                          className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {activeKey === `del-acc-${a.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          {a.role === 'driver' && (
+                            editingPinId === a.id ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  autoFocus
+                                  value={editingPinValue}
+                                  onChange={(e) => { setEditingPinValue(e.target.value.replace(/\D/g, '').slice(0, 4)); setEditingPinError(''); }}
+                                  onKeyDown={(e) => e.key === 'Enter' && handleSavePin(a.id)}
+                                  inputMode="numeric"
+                                  placeholder="4 số"
+                                  className={`border rounded-lg px-2 py-1 text-xs font-mono tracking-widest w-16 focus:outline-none focus:ring-1 ${
+                                    editingPinError ? 'border-red-400 focus:ring-red-400' : 'border-slate-300 focus:ring-emerald-500'
+                                  }`}
+                                />
+                                <button
+                                  onClick={() => handleSavePin(a.id)}
+                                  disabled={busy}
+                                  className="text-emerald-600 cursor-pointer disabled:opacity-40"
+                                >
+                                  <Check className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => { setEditingPinId(null); setEditingPinValue(''); setEditingPinError(''); }}
+                                  className="text-slate-400 cursor-pointer"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => { setEditingPinId(a.id); setEditingPinValue(''); setEditingPinError(''); }}
+                                disabled={busy}
+                                title="Đổi mã PIN"
+                                className="p-1.5 text-slate-500 hover:bg-slate-100 hover:text-emerald-700 rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                <KeyRound className="w-4 h-4" />
+                              </button>
+                            )
+                          )}
+                          <button
+                            onClick={() => {
+                              if (busy) return;
+                              if (confirm(`Xoá tài khoản ${a.fullName}?`)) runAction(`del-acc-${a.id}`, () => onDeleteAccount(a.id));
+                            }}
+                            disabled={busy}
+                            className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            {activeKey === `del-acc-${a.id}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        {editingPinId === a.id && editingPinError && (
+                          <p className="text-[10px] text-red-600 font-semibold mt-1">{editingPinError}</p>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -482,6 +568,28 @@ export default function AdminSettingsView({
                     <option value="admin">Admin</option>
                   </select>
                 </div>
+
+                {newRole === 'driver' && (
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-700 uppercase">
+                      Mã PIN (4 số) <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      value={newPin}
+                      onChange={(e) => {
+                        setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4));
+                        if (addUserErrors.pin) setAddUserErrors((p) => ({ ...p, pin: undefined }));
+                      }}
+                      inputMode="numeric"
+                      placeholder="vd: 1234"
+                      className={`w-full border rounded-lg px-3 py-2 text-sm font-mono tracking-widest focus:outline-none focus:ring-1 ${
+                        addUserErrors.pin ? 'border-red-400 focus:ring-red-400' : 'border-slate-300 focus:ring-emerald-500'
+                      }`}
+                    />
+                    {addUserErrors.pin && <p className="text-[11px] text-red-600 font-semibold">{addUserErrors.pin}</p>}
+                    <p className="text-[11px] text-slate-400">Tài xế dùng mã này để chọn tên + chuyển ca nhanh trên iPad dùng chung, không cần đăng nhập Google.</p>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">

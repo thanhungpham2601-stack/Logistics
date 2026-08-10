@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { Driver, JobEntry, UserRole } from './types';
-import GoogleLoginScreen from './components/GoogleLoginScreen';
+import LoginScreen from './components/LoginScreen';
 import DriverView from './components/DriverView';
 import AccountantView from './components/AccountantView';
 import { Loader2 } from 'lucide-react';
@@ -23,6 +23,7 @@ import {
   fetchOperationRates,
   linkAuthUserId,
   setContainerSizeActive,
+  setDriverPin,
   setContainerTypeActive,
   setDaoChuyenSubtypeActive,
   setEquipmentTypeActive,
@@ -82,14 +83,36 @@ export default function App() {
     setJobs(jobsData);
     setConfigLists(configData);
     setRates(ratesData);
-    // KHÔNG tin localStorage cho phiên đăng nhập - phiên chỉ hợp lệ khi Supabase Auth xác nhận
-    // có session Google thật (xử lý ở effect riêng bên dưới).
+    // Kế toán/Admin: KHÔNG tin localStorage cho phiên đăng nhập - phiên chỉ hợp lệ khi Supabase
+    // Auth xác nhận có session Google thật (xử lý ở effect riêng bên dưới).
+    // Tài xế: đăng nhập bằng mã PIN, không có session Supabase Auth thật để tự xác nhận lại - nên
+    // CÓ khôi phục từ localStorage (chỉ áp dụng cho role driver) để không bắt nhập lại PIN mỗi khi
+    // tải lại trang, miễn là chưa bấm "Đăng xuất" (EXPLICIT_LOGOUT_KEY).
+    if (localStorage.getItem(EXPLICIT_LOGOUT_KEY) !== '1') {
+      const savedId = localStorage.getItem(CURRENT_ACCOUNT_KEY);
+      if (savedId) {
+        const restored = accountsData.find((a) => a.id === savedId && a.role === 'driver' && a.isActive);
+        if (restored) setCurrentAccount(restored);
+      }
+    }
   };
 
   useEffect(() => {
     loadAll()
       .catch((err) => setLoadError(err.message ?? String(err)))
       .finally(() => setLoading(false));
+  }, []);
+
+  // Trình duyệt (đặc biệt Safari trên iPad) có thể phục hồi trang từ bfcache khi bấm Back/Forward
+  // hoặc mở lại tab - lúc đó DOM cũ được vẽ lại nguyên trạng mà KHÔNG chạy lại các effect xác thực
+  // ở trên, nên có thể vẫn thấy trang đã đăng nhập dù đã đăng xuất. Buộc tải lại thật để luôn chạy
+  // lại toàn bộ logic xác thực từ đầu.
+  useEffect(() => {
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) window.location.reload();
+    };
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
   }, []);
 
   // ===================== Xác thực qua Google (Supabase Auth) =====================
@@ -123,10 +146,10 @@ export default function App() {
         }
         setCurrentAccount(account);
         localStorage.setItem(CURRENT_ACCOUNT_KEY, account.id);
-        // Chỉ tự điều hướng khi đang đứng ở trang đăng nhập - tránh việc Supabase bắn lại
+        // Chỉ tự điều hướng khi đang đứng ở 1 trong 2 trang đăng nhập - tránh việc Supabase bắn lại
         // SIGNED_IN lúc tab lấy focus/refresh token làm bật người dùng ra khỏi trang họ đang xem
         // (VD: đang xem "Báo Cáo Theo Tài Xế" thì bị đá về Danh Sách Sản Lượng).
-        if (window.location.pathname === '/login') {
+        if (window.location.pathname === '/login' || window.location.pathname === '/manage/login') {
           navigate(homePathFor(account), { replace: true });
         }
       } catch (err) {
@@ -171,6 +194,18 @@ export default function App() {
 
   const refreshConfig = async () => {
     setConfigLists(await fetchConfigLists());
+  };
+
+  // Tài xế chọn tên + nhập đúng PIN (đã xác thực ở LoginScreen qua verifyDriverPin) - vào thẳng
+  // /driver, không qua Google.
+  const handleDriverPinLogin = (account: Account) => {
+    setCurrentAccount(account);
+    localStorage.setItem(CURRENT_ACCOUNT_KEY, account.id);
+    navigate('/driver', { replace: true });
+  };
+
+  const handleSetDriverPin = async (accountId: string, pin: string) => {
+    await setDriverPin(accountId, pin);
   };
 
   const handleLogout = async () => {
@@ -255,8 +290,9 @@ export default function App() {
 
   // ===================== Admin: accounts =====================
   const handleCreateAccount = async (input: { username: string; fullName: string; role: UserRole; phone?: string; licenseNumber?: string; email?: string }) => {
-    await createAccount(input);
+    const account = await createAccount(input);
     await refreshAccounts();
+    return account;
   };
 
   const handleToggleAccountActive = async (id: string, isActive: boolean) => {
@@ -378,10 +414,22 @@ export default function App() {
           currentAccount ? (
             <Navigate to={homePathFor(currentAccount)} replace />
           ) : (
-            <GoogleLoginScreen
+            <LoginScreen mode="driver" accounts={accounts} onDriverLogin={handleDriverPinLogin} />
+          )
+        }
+      />
+
+      <Route
+        path="/manage/login"
+        element={
+          currentAccount ? (
+            <Navigate to={homePathFor(currentAccount)} replace />
+          ) : (
+            <LoginScreen
+              mode="staff"
               resolving={resolvingAuth}
               authError={authError}
-              onBeforeSignIn={() => {
+              onBeforeGoogleSignIn={() => {
                 isLoggingOutRef.current = false;
                 localStorage.removeItem(EXPLICIT_LOGOUT_KEY);
               }}
@@ -437,6 +485,7 @@ export default function App() {
               onToggleAccountActive={handleToggleAccountActive}
               onDeleteAccount={handleDeleteAccount}
               onUpdateAccountEmail={handleUpdateAccountEmail}
+              onSetDriverPin={handleSetDriverPin}
               onAddShippingLine={handleAddShippingLine}
               onToggleShippingLine={handleToggleShippingLine}
               onAddContainerSize={handleAddContainerSize}
