@@ -4,7 +4,6 @@ import { Truck, ArrowRight, Anchor, Search, Loader2, ArrowLeft, Delete } from 'l
 import { Account, verifyDriverPin } from '../lib/api';
 import { stripDiacritics } from '../utils';
 import GoogleLoginScreen from './GoogleLoginScreen';
-import VietnamMapBackground from './VietnamMapBackground';
 
 interface LoginScreenProps {
   // 'driver' (mặc định /login): chỉ hiện màn chọn tài xế + PIN - dùng trên iPad dùng chung.
@@ -147,10 +146,6 @@ export default function LoginScreen({ mode, accounts = [], onDriverLogin, resolv
     <div className="min-h-screen bg-radial from-slate-900 via-slate-950 to-black text-slate-100 flex flex-col justify-between font-sans relative overflow-hidden">
       <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-blue-500/10 rounded-full blur-[120px]" />
       <div className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-emerald-500/10 rounded-full blur-[120px]" />
-      <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
-        <VietnamMapBackground className="w-[420px] sm:w-[560px] h-auto opacity-70" />
-      </div>
-
       <header className="pt-12 px-4 text-center z-10 relative">
         <div className="inline-flex items-center justify-center p-4 bg-slate-900/90 border border-slate-800 rounded-2xl mb-4 shadow-2xl transition-all hover:scale-105 duration-300">
           <Anchor className="w-10 h-10 text-blue-500 animate-pulse" />
