@@ -101,7 +101,6 @@ export default function DriverView({
   const [historyPage, setHistoryPage] = useState(0);
   const [historyFromDate, setHistoryFromDate] = useState(() => addDaysToDateStr(todayVN(), -2));
   const [historyToDate, setHistoryToDate] = useState(() => todayVN());
-  const [exportDate, setExportDate] = useState(() => todayVN());
   const [exportShift, setExportShift] = useState<'day' | 'night'>('day');
   const [isExporting, setIsExporting] = useState(false);
   const isBusy = isSubmitting || deletingJobId !== null;
@@ -220,10 +219,22 @@ export default function DriverView({
   };
 
   // Xuất báo cáo ca ra Excel - đúng mẫu công ty (giống hệt bản admin/kế toán export), nhưng chỉ
-  // gồm lượt của chính tài xế này, lọc theo 1 ngày + 1 ca cụ thể (không có chế độ khoảng ngày).
+  // gồm lượt của chính tài xế này. Không cho chọn ngày thủ công nữa - ngày được suy ra tự động từ
+  // thời điểm bấm xuất:
+  //  - Ca ngày: luôn là hôm nay (T).
+  //  - Ca đêm: nếu giờ hiện tại đã sau 19h (đang trong ca đêm của hôm nay) thì lấy ca đêm T -> T+1;
+  //    còn nếu chưa tới 19h hôm nay (kể cả đang là sáng sớm, vẫn thuộc ca đêm hôm qua) thì lấy ca
+  //    đêm gần nhất đã/đang diễn ra: T-1 -> T.
   const handleExportExcel = async () => {
     setIsExporting(true);
     try {
+      const today = todayVN();
+      const nowHourVN = Number(
+        new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(new Date())
+      );
+      const exportDate =
+        exportShift === 'day' ? today : nowHourVN >= 19 ? today : addDaysToDateStr(today, -1);
+
       const jobsForExport = jobs.filter(
         (job) => job.driverId === currentDriver.id && isJobInShift(job.timestamp, exportDate, exportShift)
       );
@@ -785,20 +796,14 @@ export default function DriverView({
 
         {driverTab === 'list' && (
         <>
-        {/* Xuất báo cáo ca - chọn 1 ngày + 1 ca, xuất đúng mẫu Excel công ty (chỉ dữ liệu của tôi) */}
+        {/* Xuất báo cáo ca - chọn ca, ngày tự suy ra theo thời điểm hiện tại (xem handleExportExcel),
+            xuất đúng mẫu Excel công ty (chỉ dữ liệu của tôi) */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
           <h3 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
             <Download className="w-4.5 h-4.5" style={{ color: 'var(--theme-primary)' }} />
             <span>Xuất Báo Cáo Ca (Excel)</span>
           </h3>
           <div className="flex flex-wrap items-center gap-2">
-            <DatePicker
-              format="DD/MM/YYYY"
-              value={dayjs(exportDate)}
-              onChange={(date) => date && setExportDate(date.format('YYYY-MM-DD'))}
-              allowClear={false}
-              className="!h-[38px] !rounded-lg !border-2 !border-slate-300"
-            />
             <div className="flex items-center bg-slate-100 border border-slate-300 rounded-lg p-1">
               <button
                 type="button"
