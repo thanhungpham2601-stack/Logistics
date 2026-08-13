@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
 import { ContainerSizeRow, ContainerTypeRow, DaoChuyenSubtypeRow, EquipmentTypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInDateRange, isJobInShift, validateContainerNumber, cleanContainerNo, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInDateRange, isJobInShift, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
 import DateRangePicker from './DateRangePicker';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
 
@@ -558,6 +558,7 @@ export default function DriverView({
                 value={containerNo}
                 onChange={(e) => handleContainerInput(e.target.value)}
                 onBlur={handleContainerBlur}
+                onPaste={(e) => { e.preventDefault(); setContainerNo(cleanPastedContainerNo(e)); }}
                 placeholder="Ví dụ: TRHU4320650"
                 maxLength={20}
                 className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3.5 text-lg font-mono font-bold tracking-widest text-slate-900 placeholder-slate-400 focus:outline-none focus:border-blue-600 transition-colors uppercase"
@@ -624,7 +625,7 @@ export default function DriverView({
                   type="button"
                   onClick={() => setSelectedCargoStatus('rong')}
                   className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                    selectedCargoStatus === 'rong' ? 'bg-slate-600 text-white' : 'text-slate-600'
+                    selectedCargoStatus === 'rong' ? 'bg-blue-600 text-white' : 'text-slate-600'
                   }`}
                 >
                   <PackageOpen className="w-4 h-4" /> Rỗng
@@ -1119,6 +1120,7 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
               value={containerNo}
               onChange={(e) => setContainerNo(e.target.value)}
               onBlur={() => setContainerNo((v) => cleanContainerNo(v))}
+              onPaste={(e) => { e.preventDefault(); setContainerNo(cleanPastedContainerNo(e)); }}
               className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold uppercase text-slate-900 focus:outline-none focus:border-blue-600"
               required
             />
@@ -1250,7 +1252,7 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
               <button
                 type="button"
                 onClick={() => setCargoStatus('rong')}
-                className={`flex-1 py-2 text-xs font-bold rounded-lg border-2 cursor-pointer ${cargoStatus === 'rong' ? 'bg-slate-600 border-slate-600 text-white' : 'bg-white border-slate-300 text-slate-600'}`}
+                className={`flex-1 py-2 text-xs font-bold rounded-lg border-2 cursor-pointer ${cargoStatus === 'rong' ? 'bg-blue-600 border-blue-600 text-white' : 'bg-white border-slate-300 text-slate-600'}`}
               >
                 Rỗng
               </button>

@@ -14,7 +14,7 @@ import {
   LayoutDashboard, Database
 } from 'lucide-react';
 import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
-import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN, getAutoShift, cleanContainerNo } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN, getAutoShift, cleanContainerNo, cleanPastedContainerNo } from '../utils';
 import { ContainerSizeRow, OperationRateRow, OperationTypeRow, ReconciliationReportType, ReportReconciliationRow } from '../lib/supabaseTypes';
 import { Account, ConfigLists, fetchJobsPage, fetchReconciliations, upsertReconciliation } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
@@ -1227,6 +1227,7 @@ export default function AccountantView({
                   value={formContainerNo}
                   onChange={(e) => setFormContainerNo(e.target.value)}
                   onBlur={() => setFormContainerNo((v) => cleanContainerNo(v))}
+                  onPaste={(e) => { e.preventDefault(); setFormContainerNo(cleanPastedContainerNo(e)); }}
                   placeholder="Ví dụ: TRHU4320650"
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold uppercase focus:ring-1 focus:ring-emerald-500 focus:outline-none"
                   required

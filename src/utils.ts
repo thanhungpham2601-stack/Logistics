@@ -1,3 +1,5 @@
+import type { ClipboardEvent } from 'react';
+
 // Toàn bộ ca làm việc (7h/19h) và ngày làm việc được tính theo giờ Việt Nam
 // (UTC+7) một cách cố định, bất kể múi giờ hệ điều hành/trình duyệt đang xem
 // báo cáo - vì cảng ICD AN GIA chỉ vận hành theo giờ VN.
@@ -80,6 +82,20 @@ export function cleanContainerNo(num: string): string {
 export function validateContainerNumber(num: string): boolean {
   // Usually 4 letters followed by 7 digits
   return /^[A-Z]{4}\d{7}$/.test(cleanContainerNo(num));
+}
+
+/**
+ * Xử lý sự kiện dán (paste) vào ô số container: chèn nội dung dán vào đúng vị trí đang chọn
+ * trong ô, rồi dọn sạch khoảng trắng ngay lập tức - không cần đợi bấm ra ngoài (blur) mới format
+ * như lúc gõ tay (gõ tay vẫn cố tình không ép định dạng, tránh vỡ IME tiếng Việt).
+ * Dùng: <input onPaste={(e) => { e.preventDefault(); setContainerNo(cleanPastedContainerNo(e)); }} />
+ */
+export function cleanPastedContainerNo(e: ClipboardEvent<HTMLInputElement>): string {
+  const pasted = e.clipboardData.getData('text');
+  const target = e.currentTarget;
+  const start = target.selectionStart ?? target.value.length;
+  const end = target.selectionEnd ?? target.value.length;
+  return cleanContainerNo(target.value.slice(0, start) + pasted + target.value.slice(end));
 }
 
 /** Ca tự nhận diện theo giờ Việt Nam hiện tại: 07:00-18:59 = ca ngày, còn lại = ca đêm. */
