@@ -14,7 +14,7 @@ import {
   LayoutDashboard, Database
 } from 'lucide-react';
 import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
-import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN, getAutoShift } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN, getAutoShift, cleanContainerNo } from '../utils';
 import { ContainerSizeRow, OperationRateRow, OperationTypeRow, ReconciliationReportType, ReportReconciliationRow } from '../lib/supabaseTypes';
 import { Account, ConfigLists, fetchJobsPage, fetchReconciliations, upsertReconciliation } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
@@ -218,7 +218,7 @@ export default function AccountantView({
   const [formLine, setFormLine] = useState('');
   const [formSize, setFormSize] = useState<ContainerSize>('');
   const [formOperation, setFormOperation] = useState<OperationType>('nang_khach_hang');
-  const [formCargoStatus, setFormCargoStatus] = useState<'rong' | 'hang'>('hang');
+  const [formCargoStatus, setFormCargoStatus] = useState<'rong' | 'hang'>('rong');
   const [formSubType, setFormSubType] = useState<string>('');
   const [formEquipment, setFormEquipment] = useState<string>('');
   const [formContainerType, setFormContainerType] = useState<string>('');
@@ -307,7 +307,7 @@ export default function AccountantView({
     setFormLine(shippingLines[0] ?? '');
     setFormSize(sizes[0]?.code ?? '');
     setFormOperation(operations[0]?.code ?? 'nang_khach_hang');
-    setFormCargoStatus('hang');
+    setFormCargoStatus('rong');
     setFormSubType(configLists.daoChuyenSubtypes[0]?.code ?? '');
     setFormEquipment(configLists.equipmentTypes[0]?.code ?? '');
     setFormContainerType(configLists.containerTypes[0]?.code ?? '');
@@ -357,7 +357,7 @@ export default function AccountantView({
       // Ca làm việc tự suy ra từ thời gian thực hiện - không cho chọn tay riêng để tránh lệch
       // (vd: chọn "ca ngày" nhưng thời gian ghi lại là ban đêm).
       shift: getAutoShift(new Date(formTime)),
-      containerNo: formContainerNo.trim().toUpperCase(),
+      containerNo: cleanContainerNo(formContainerNo),
       line: formLine,
       size: formSize,
       operation: formOperation,
@@ -1226,7 +1226,7 @@ export default function AccountantView({
                   type="text"
                   value={formContainerNo}
                   onChange={(e) => setFormContainerNo(e.target.value)}
-                  onBlur={() => setFormContainerNo((v) => v.trim().toUpperCase())}
+                  onBlur={() => setFormContainerNo((v) => cleanContainerNo(v))}
                   placeholder="Ví dụ: TRHU4320650"
                   className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold uppercase focus:ring-1 focus:ring-emerald-500 focus:outline-none"
                   required

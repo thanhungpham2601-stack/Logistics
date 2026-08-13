@@ -65,13 +65,21 @@ export function stripDiacritics(str: string): string {
 }
 
 /**
+ * Xoá mọi khoảng trắng - đầu, cuối, VÀ ở giữa - rồi viết hoa. Dùng khi chốt lại số hiệu container
+ * (blur/submit), vì copy-paste từ nguồn khác (Excel, ảnh chụp OCR...) hay dính dấu cách thừa ở
+ * giữa (vd "TRHU 4320650"), chỉ trim() đầu đuôi thì không xử lý được trường hợp này.
+ */
+export function cleanContainerNo(num: string): string {
+  return num.replace(/\s+/g, '').toUpperCase();
+}
+
+/**
  * Validates standard ISO container format (4 letters, 7 numbers)
  * e.g., TRHU4320650 (or TRHU432065)
  */
 export function validateContainerNumber(num: string): boolean {
-  const clean = num.trim().toUpperCase();
   // Usually 4 letters followed by 7 digits
-  return /^[A-Z]{4}\d{7}$/.test(clean);
+  return /^[A-Z]{4}\d{7}$/.test(cleanContainerNo(num));
 }
 
 /** Ca tự nhận diện theo giờ Việt Nam hiện tại: 07:00-18:59 = ca ngày, còn lại = ca đêm. */

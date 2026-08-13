@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
 import { ContainerSizeRow, ContainerTypeRow, DaoChuyenSubtypeRow, EquipmentTypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInDateRange, isJobInShift, validateContainerNumber, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInDateRange, isJobInShift, validateContainerNumber, cleanContainerNo, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
 import DateRangePicker from './DateRangePicker';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
 
@@ -88,7 +88,7 @@ export default function DriverView({
   // không cho chọn tay riêng để tránh lệch (vd: chọn "ca ngày" nhưng giờ tạo thực tế là ca đêm).
   const [useCurrentTime, setUseCurrentTime] = useState(true);
   const [manualTimestamp, setManualTimestamp] = useState('');
-  const [selectedCargoStatus, setSelectedCargoStatus] = useState<CargoStatus>('hang');
+  const [selectedCargoStatus, setSelectedCargoStatus] = useState<CargoStatus>('rong');
   const [selectedSubType, setSelectedSubType] = useState<string>(daoChuyenSubtypes[0]?.code ?? '');
   const [notes, setNotes] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -153,7 +153,7 @@ export default function DriverView({
     e.preventDefault();
     if (isBusy) return;
 
-    const finalContainerNo = containerNo.trim().toUpperCase();
+    const finalContainerNo = cleanContainerNo(containerNo);
 
     // Nút đã bị khoá cho tới khi đúng định dạng, đây chỉ là chốt chặn phòng vệ.
     if (!validateContainerNumber(finalContainerNo)) {
@@ -202,7 +202,7 @@ export default function DriverView({
       setSelectedContainerType(containerTypes[0]?.code ?? '');
       setSelectedEquipment(equipmentTypes[0]?.code ?? '');
       setSelectedOperation(operations[0]?.code ?? 'nang_khach_hang');
-      setSelectedCargoStatus('hang');
+      setSelectedCargoStatus('rong');
       setSelectedSubType(daoChuyenSubtypes[0]?.code ?? '');
       setErrorWarning(null);
       setSuccessMessage(`Đã chấm công thành công công ${finalContainerNo}!`);
@@ -273,7 +273,7 @@ export default function DriverView({
   };
 
   const handleContainerBlur = () => {
-    setContainerNo((prev) => prev.trim().toUpperCase());
+    setContainerNo((prev) => cleanContainerNo(prev));
   };
 
   const selectQuickNote = (note: string) => {
@@ -1086,7 +1086,7 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
     setIsSaving(true);
     try {
       await onSave({
-        containerNo: containerNo.trim().toUpperCase(),
+        containerNo: cleanContainerNo(containerNo),
         line,
         size,
         operation,
@@ -1118,7 +1118,7 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
               type="text"
               value={containerNo}
               onChange={(e) => setContainerNo(e.target.value)}
-              onBlur={() => setContainerNo((v) => v.trim().toUpperCase())}
+              onBlur={() => setContainerNo((v) => cleanContainerNo(v))}
               className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm font-mono font-bold uppercase text-slate-900 focus:outline-none focus:border-blue-600"
               required
             />
