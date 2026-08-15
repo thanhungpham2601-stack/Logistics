@@ -469,6 +469,7 @@ export default function App() {
           currentAccount && currentAccount.role !== 'driver' ? (
             <AccountantView
               jobs={jobs}
+              onRefreshJobs={refreshJobs}
               drivers={drivers}
               rates={rates}
               shippingLines={configLists.lines.filter((l) => l.is_active).map((l) => l.code)}

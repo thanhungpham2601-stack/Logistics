@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
 import { ContainerSizeRow, ContainerTypeRow, DaoChuyenSubtypeRow, EquipmentTypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInDateRange, isJobInShift, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInDateRange, isJobInShift, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
 import DateRangePicker from './DateRangePicker';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
 
@@ -174,6 +174,24 @@ export default function DriverView({
       return;
     }
 
+    // Cảnh báo trùng lượt: cùng tài xế (chính mình) + cùng ca + cùng container + cùng tác nghiệp.
+    // Khác ca thì không tính trùng (VD: nâng rồi hạ cùng 1 cont ở 2 ca khác nhau là hợp lệ). Chỉ
+    // cảnh báo và cho xác nhận tiếp tục, không cấm hẳn - phòng trường hợp cố tình lặp lại thật.
+    const duplicate = findDuplicateJob(jobs, {
+      driverId: currentDriver.id,
+      containerNo: finalContainerNo,
+      operation: selectedOperation,
+      timestamp: effectiveTimestamp.toISOString(),
+      shift: effectiveShift,
+    });
+    if (duplicate) {
+      const opLabel = operations.find((o) => o.code === selectedOperation)?.label ?? selectedOperation;
+      const confirmed = window.confirm(
+        `Đã có 1 lượt "${opLabel}" cho container ${finalContainerNo} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}).\nBạn có chắc muốn ghi nhận thêm lượt trùng này?`
+      );
+      if (!confirmed) return;
+    }
+
     setIsSubmitting(true);
     try {
       await onAddJob({
@@ -256,6 +274,7 @@ export default function DriverView({
         jobs: jobsForExport,
         sizes,
         operations,
+        daoChuyenSubtypes,
         subtitle,
         driverLabel: currentDriver.name,
         filenamePrefix,
@@ -943,9 +962,9 @@ export default function DriverView({
                           })()}
                         </span>
                       </div>
-                      {job.notes && (
+                      {formatJobNotesDisplay(job, daoChuyenSubtypes) && (
                         <p className="text-[11px] text-amber-700 italic font-medium">
-                          Ghi chú: {job.notes}
+                          Ghi chú: {formatJobNotesDisplay(job, daoChuyenSubtypes)}
                         </p>
                       )}
                     </div>
@@ -1027,6 +1046,7 @@ export default function DriverView({
       {editingJob && (
         <EditJobModal
           job={editingJob}
+          existingJobs={myJobs}
           sizes={sizes}
           operations={operations}
           shippingLines={shippingLines}
@@ -1046,6 +1066,7 @@ export default function DriverView({
 
 interface EditJobModalProps {
   job: JobEntry;
+  existingJobs: JobEntry[];
   sizes: ContainerSizeRow[];
   operations: OperationTypeRow[];
   shippingLines: string[];
@@ -1056,7 +1077,7 @@ interface EditJobModalProps {
   onSave: (patch: Partial<JobEntry>) => Promise<void>;
 }
 
-function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes, equipmentTypes, containerTypes, onClose, onSave }: EditJobModalProps) {
+function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, daoChuyenSubtypes, equipmentTypes, containerTypes, onClose, onSave }: EditJobModalProps) {
   const [containerNo, setContainerNo] = useState(job.containerNo);
   const [line, setLine] = useState(job.line);
   const [size, setSize] = useState<ContainerSize>(job.size);
@@ -1083,6 +1104,20 @@ function EditJobModal({ job, sizes, operations, shippingLines, daoChuyenSubtypes
       setErrorWarning('Thời điểm thực hiện không hợp lệ - không được chọn tương lai hoặc quá 3 ngày trước.');
       return;
     }
+
+    const duplicate = findDuplicateJob(
+      existingJobs,
+      { driverId: job.driverId, containerNo, operation, timestamp: parsedTimestamp.toISOString(), shift: getAutoShift(parsedTimestamp) },
+      job.id
+    );
+    if (duplicate) {
+      const opLabel = operations.find((o) => o.code === operation)?.label ?? operation;
+      const confirmed = window.confirm(
+        `Đã có 1 lượt "${opLabel}" cho container ${cleanContainerNo(containerNo)} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}).\nBạn có chắc muốn lưu trùng như vậy?`
+      );
+      if (!confirmed) return;
+    }
+
     setErrorWarning(null);
     setIsSaving(true);
     try {

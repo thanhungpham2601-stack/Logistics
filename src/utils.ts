@@ -98,6 +98,22 @@ export function cleanPastedContainerNo(e: ClipboardEvent<HTMLInputElement>): str
   return cleanContainerNo(target.value.slice(0, start) + pasted + target.value.slice(end));
 }
 
+/**
+ * Tác nghiệp "Đảo chuyển" bắt buộc chọn "Phân loại đảo chuyển" (khách hàng, xuất tàu, sửa chữa...)
+ * - đây mới là phân loại thật sự của lượt đó, ghi chú tự do chỉ là tuỳ chọn thêm nên thường để
+ * trống. Hiển thị phân loại này thay vì để trống ở mọi nơi có cột Ghi chú (web, in, Excel) - ghép
+ * thêm ghi chú tự do (nếu có) chứ không mất dữ liệu.
+ */
+export function formatJobNotesDisplay(
+  job: { operation: string; subType?: string | null; notes?: string | null },
+  daoChuyenSubtypes: { code: string; label: string }[]
+): string {
+  const subTypeLabel =
+    job.operation === 'dao_chuyen' ? daoChuyenSubtypes.find((st) => st.code === job.subType)?.label : undefined;
+  if (!subTypeLabel) return job.notes || '';
+  return job.notes ? `${subTypeLabel} - ${job.notes}` : subTypeLabel;
+}
+
 /** Ca tự nhận diện theo giờ Việt Nam hiện tại: 07:00-18:59 = ca ngày, còn lại = ca đêm. */
 export function getAutoShift(date: Date): 'day' | 'night' {
   const hour = Number(
@@ -203,4 +219,52 @@ export function getDateRangeUtc(fromDateStr: string, toDateStr: string): { from:
     from: new Date(vnWallClockToUtcMs(fromDateStr, 0)).toISOString(),
     to: new Date(vnWallClockToUtcMs(toDateStr, 0, 1)).toISOString(),
   };
+}
+
+/**
+ * "Ngày ca" của 1 timestamp - dùng để gộp 2 lượt vào chung 1 ca khi so trùng. Ca ngày thì trùng
+ * ngày lịch luôn; ca đêm thì quy ước theo ngày BẮT ĐẦU ca (19:00 ngày X - 07:00 ngày X+1 đều tính
+ * là "ca đêm ngày X"), nên timestamp rơi vào khoảng 00:00-06:59 phải lùi về ngày hôm trước.
+ */
+export function getShiftDateStr(isoString: string): string {
+  const dateStr = toVNDateStr(isoString);
+  const hour = Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(
+      new Date(isoString)
+    )
+  );
+  return hour < 7 ? addDaysToDateStr(dateStr, -1) : dateStr;
+}
+
+interface DuplicateCheckJob {
+  id: string;
+  driverId: string;
+  containerNo: string;
+  operation: string;
+  timestamp: string;
+  shift: 'day' | 'night';
+}
+
+/**
+ * Tìm lượt chấm công trùng: cùng tài xế + cùng ca (cùng ngày ca VÀ cùng loại ca ngày/đêm) + cùng
+ * số container + cùng loại tác nghiệp. Khác ca thì KHÔNG tính trùng dù cùng container/tác nghiệp -
+ * vd nâng rồi hạ cùng 1 container ở 2 ca khác nhau vẫn là 2 lượt hợp lệ, chỉ trùng khi lặp lại
+ * đúng trong cùng 1 ca. Truyền excludeId khi đang sửa 1 lượt có sẵn để không tự so trùng với chính nó.
+ */
+export function findDuplicateJob<T extends DuplicateCheckJob>(
+  jobs: T[],
+  candidate: { driverId: string; containerNo: string; operation: string; timestamp: string; shift: 'day' | 'night' },
+  excludeId?: string
+): T | undefined {
+  const candidateShiftDate = getShiftDateStr(candidate.timestamp);
+  const candidateContainer = cleanContainerNo(candidate.containerNo);
+  return jobs.find((j) => {
+    if (excludeId && j.id === excludeId) return false;
+    if (j.driverId !== candidate.driverId) return false;
+    if (j.shift !== candidate.shift) return false;
+    if (getShiftDateStr(j.timestamp) !== candidateShiftDate) return false;
+    if (cleanContainerNo(j.containerNo) !== candidateContainer) return false;
+    if (j.operation !== candidate.operation) return false;
+    return true;
+  });
 }

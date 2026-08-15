@@ -14,7 +14,7 @@ import {
   LayoutDashboard, Database
 } from 'lucide-react';
 import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
-import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN, getAutoShift, cleanContainerNo, cleanPastedContainerNo } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN, getAutoShift, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob } from '../utils';
 import { ContainerSizeRow, OperationRateRow, OperationTypeRow, ReconciliationReportType, ReportReconciliationRow } from '../lib/supabaseTypes';
 import { Account, ConfigLists, fetchJobsPage, fetchReconciliations, upsertReconciliation } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
@@ -31,6 +31,7 @@ import { ThemeName, getStoredTheme } from '../lib/theme';
 
 interface AccountantViewProps {
   jobs: JobEntry[];
+  onRefreshJobs: () => Promise<void>;
   drivers: Driver[];
   rates: OperationRateRow[];
   shippingLines: string[];
@@ -68,6 +69,7 @@ interface AccountantViewProps {
 
 export default function AccountantView({
   jobs,
+  onRefreshJobs,
   drivers,
   rates,
   shippingLines,
@@ -288,6 +290,20 @@ export default function AccountantView({
     };
   }, [activeTab, searchQuery, isRangeMode, filterDate, filterToDate, filterShift, filterDriver, dashboardPage, jobs]);
 
+  // Bảng danh sách sản lượng ở trên lấy dữ liệu trực tiếp từ Supabase mỗi khi đổi trang/bộ lọc
+  // (luôn mới nhất). Nhưng dòng "Tổng cộng" và các báo cáo tổng hợp khác (Theo tài xế, Nâng/Hạ,
+  // Đảo chuyển...) đều tính từ "jobs" - danh sách dùng chung của cả app, chỉ được làm mới khi
+  // CHÍNH tab này thêm/sửa/xoá 1 lượt (xem refreshJobs() ở App.tsx). Nếu dữ liệu mới được thêm
+  // từ nơi khác (tài xế trên iPad, hoặc 1 tab kế toán khác), "jobs" ở đây bị lệch cho tới khi F5 -
+  // nên mỗi khi đổi trang/bộ lọc ở màn này, chủ động làm mới luôn "jobs" để Tổng cộng/báo cáo tổng
+  // hợp không bị lệch so với bảng chi tiết. Cố tình KHÔNG đưa "jobs" vào dependency (chỉ đổi
+  // trang/bộ lọc mới gọi) để tránh vòng lặp: refresh -> jobs đổi -> effect này chạy lại -> refresh...
+  useEffect(() => {
+    if (activeTab !== 'dashboard' || searchQuery) return;
+    onRefreshJobs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, searchQuery, isRangeMode, filterDate, filterToDate, filterShift, filterDriver, dashboardPage]);
+
   const dashboardRows = searchQuery
     ? filteredJobs.slice(dashboardPage * DASHBOARD_PAGE_SIZE, dashboardPage * DASHBOARD_PAGE_SIZE + DASHBOARD_PAGE_SIZE)
     : pagedJobs;
@@ -368,6 +384,21 @@ export default function AccountantView({
       notes: formNotes.trim()
     };
 
+    // Cảnh báo trùng lượt: cùng tài xế + cùng ca + cùng container + cùng tác nghiệp. Khác ca thì
+    // không tính trùng. Chỉ cảnh báo và cho xác nhận tiếp tục, không cấm hẳn.
+    const duplicate = findDuplicateJob(
+      jobs,
+      { driverId: jobData.driverId, containerNo: jobData.containerNo, operation: jobData.operation, timestamp: jobData.timestamp, shift: jobData.shift },
+      isEditing ? editingJobId ?? undefined : undefined
+    );
+    if (duplicate) {
+      const opLabel = operations.find((o) => o.code === jobData.operation)?.label ?? jobData.operation;
+      const confirmed = window.confirm(
+        `Đã có 1 lượt "${opLabel}" cho container ${jobData.containerNo} của ${jobData.driverName} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}).\nBạn có chắc muốn lưu trùng như vậy?`
+      );
+      if (!confirmed) return;
+    }
+
     setIsSavingJob(true);
     try {
       if (isEditing) {
@@ -420,6 +451,7 @@ export default function AccountantView({
         jobs: filteredJobs,
         sizes,
         operations,
+        daoChuyenSubtypes: configLists.daoChuyenSubtypes,
         subtitle: getShiftSubtitle(),
         driverLabel: getSelectedDriverName(),
         filenamePrefix: `Bao_Cao_Ca_${filterDate}_${isRangeMode ? filterToDate : filterShift}`,
@@ -1086,8 +1118,11 @@ export default function AccountantView({
                         })}
 
                         {/* Notes Column */}
-                        <td className="text-left px-2 font-sans text-[11px] text-slate-800 whitespace-nowrap truncate max-w-[180px]" title={job.notes}>
-                          {job.notes}
+                        <td
+                          className="text-left px-2 font-sans text-[11px] text-slate-800 whitespace-nowrap truncate max-w-[180px]"
+                          title={formatJobNotesDisplay(job, configLists.daoChuyenSubtypes)}
+                        >
+                          {formatJobNotesDisplay(job, configLists.daoChuyenSubtypes)}
                         </td>
 
                         {/* Interactive Edit/Delete Actions (Hidden in Print) */}
