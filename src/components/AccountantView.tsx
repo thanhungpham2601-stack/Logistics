@@ -11,7 +11,7 @@ import {
   Settings, LogOut, Calculator,
   ChevronsLeft, ChevronsRight, Menu, Loader2,
   ArrowUpDown, Repeat, Users, ChevronLeft, ChevronRight, ChevronDown,
-  LayoutDashboard, Database
+  LayoutDashboard, Database, AlertTriangle
 } from 'lucide-react';
 import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
 import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN, getAutoShift, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob } from '../utils';
@@ -226,6 +226,14 @@ export default function AccountantView({
   const [formContainerType, setFormContainerType] = useState<string>('');
   const [formNotes, setFormNotes] = useState('');
   const [formTime, setFormTime] = useState('');
+  const [formErrorWarning, setFormErrorWarning] = useState<string | null>(null);
+
+  // Cảnh báo tự tắt sau vài giây, không giữ mãi trên màn hình.
+  useEffect(() => {
+    if (!formErrorWarning) return;
+    const timer = setTimeout(() => setFormErrorWarning(null), 5000);
+    return () => clearTimeout(timer);
+  }, [formErrorWarning]);
 
   // Apply filters
   const filteredJobs = jobs
@@ -328,6 +336,7 @@ export default function AccountantView({
     setFormEquipment(configLists.equipmentTypes[0]?.code ?? '');
     setFormContainerType(configLists.containerTypes[0]?.code ?? '');
     setFormNotes('');
+    setFormErrorWarning(null);
 
     // Set default current date/time in local timezone for datetime-local input
     const now = new Date();
@@ -339,6 +348,7 @@ export default function AccountantView({
 
   const handleOpenEditModal = (job: JobEntry) => {
     setIsEditing(true);
+    setFormErrorWarning(null);
     setEditingJobId(job.id);
     setFormContainerNo(job.containerNo);
     setFormDriverId(job.driverId);
@@ -384,8 +394,8 @@ export default function AccountantView({
       notes: formNotes.trim()
     };
 
-    // Cảnh báo trùng lượt: cùng tài xế + cùng ca + cùng container + cùng tác nghiệp. Khác ca thì
-    // không tính trùng. Chỉ cảnh báo và cho xác nhận tiếp tục, không cấm hẳn.
+    // Chặn trùng lượt: cùng tài xế + cùng ca + cùng container + cùng tác nghiệp. Khác ca thì
+    // không tính trùng.
     const duplicate = findDuplicateJob(
       jobs,
       { driverId: jobData.driverId, containerNo: jobData.containerNo, operation: jobData.operation, timestamp: jobData.timestamp, shift: jobData.shift },
@@ -393,11 +403,12 @@ export default function AccountantView({
     );
     if (duplicate) {
       const opLabel = operations.find((o) => o.code === jobData.operation)?.label ?? jobData.operation;
-      const confirmed = window.confirm(
-        `Đã có 1 lượt "${opLabel}" cho container ${jobData.containerNo} của ${jobData.driverName} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}).\nBạn có chắc muốn lưu trùng như vậy?`
+      setFormErrorWarning(
+        `Đã có 1 lượt "${opLabel}" cho container ${jobData.containerNo} của ${jobData.driverName} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}) - không thể lưu trùng.`
       );
-      if (!confirmed) return;
+      return;
     }
+    setFormErrorWarning(null);
 
     setIsSavingJob(true);
     try {
@@ -1252,6 +1263,13 @@ export default function AccountantView({
             <h3 className="text-lg font-black text-slate-900 border-b border-slate-100 pb-3 mb-4">
               {isEditing ? 'Sửa Lượt Chấm Công' : 'Thêm Lượt Chấm Công Mới (Admin/Kế toán)'}
             </h3>
+
+            {formErrorWarning && (
+              <div className="mb-4 bg-amber-50 border-2 border-amber-400 p-3 rounded-xl text-amber-900 text-xs flex items-start space-x-2.5">
+                <AlertTriangle className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
+                <p className="text-amber-800">{formErrorWarning}</p>
+              </div>
+            )}
 
             <form onSubmit={handleSaveJob} className="space-y-4">
               {/* Container number - không ép định dạng khi đang gõ để tránh vỡ IME tiếng Việt */}

@@ -113,6 +113,14 @@ export default function DriverView({
     return () => clearInterval(timer);
   }, []);
 
+  // Cảnh báo nhập liệu (trùng lượt, sai định dạng...) tự tắt sau vài giây, không giữ mãi trên màn
+  // hình - mỗi khi errorWarning đổi sang nội dung mới thì tính lại giờ từ đầu.
+  useEffect(() => {
+    if (!errorWarning) return;
+    const timer = setTimeout(() => setErrorWarning(null), 5000);
+    return () => clearTimeout(timer);
+  }, [errorWarning]);
+
   // Thời điểm ghi nhận: mặc định giờ hiện tại (tự chạy theo currentTime), hoặc thời điểm tài xế
   // tự chọn lại (ghi nhận muộn) - giới hạn không quá 3 ngày trước, không được chọn tương lai.
   const effectiveTimestamp = useCurrentTime || !manualTimestamp ? currentTime : new Date(manualTimestamp);
@@ -174,9 +182,8 @@ export default function DriverView({
       return;
     }
 
-    // Cảnh báo trùng lượt: cùng tài xế (chính mình) + cùng ca + cùng container + cùng tác nghiệp.
-    // Khác ca thì không tính trùng (VD: nâng rồi hạ cùng 1 cont ở 2 ca khác nhau là hợp lệ). Chỉ
-    // cảnh báo và cho xác nhận tiếp tục, không cấm hẳn - phòng trường hợp cố tình lặp lại thật.
+    // Chặn trùng lượt: cùng tài xế (chính mình) + cùng ca + cùng container + cùng tác nghiệp.
+    // Khác ca thì không tính trùng (VD: nâng rồi hạ cùng 1 cont ở 2 ca khác nhau là hợp lệ).
     const duplicate = findDuplicateJob(jobs, {
       driverId: currentDriver.id,
       containerNo: finalContainerNo,
@@ -186,10 +193,10 @@ export default function DriverView({
     });
     if (duplicate) {
       const opLabel = operations.find((o) => o.code === selectedOperation)?.label ?? selectedOperation;
-      const confirmed = window.confirm(
-        `Đã có 1 lượt "${opLabel}" cho container ${finalContainerNo} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}).\nBạn có chắc muốn ghi nhận thêm lượt trùng này?`
+      setErrorWarning(
+        `Đã có 1 lượt "${opLabel}" cho container ${finalContainerNo} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}) - không thể lưu trùng.`
       );
-      if (!confirmed) return;
+      return;
     }
 
     setIsSubmitting(true);
@@ -1091,6 +1098,13 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
   const [isSaving, setIsSaving] = useState(false);
   const [errorWarning, setErrorWarning] = useState<string | null>(null);
 
+  // Cảnh báo tự tắt sau vài giây, không giữ mãi trên màn hình.
+  useEffect(() => {
+    if (!errorWarning) return;
+    const timer = setTimeout(() => setErrorWarning(null), 5000);
+    return () => clearTimeout(timer);
+  }, [errorWarning]);
+
   const isValid = validateContainerNumber(containerNo);
   const now = new Date();
   const minAllowedTimestamp = new Date();
@@ -1112,10 +1126,10 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
     );
     if (duplicate) {
       const opLabel = operations.find((o) => o.code === operation)?.label ?? operation;
-      const confirmed = window.confirm(
-        `Đã có 1 lượt "${opLabel}" cho container ${cleanContainerNo(containerNo)} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}).\nBạn có chắc muốn lưu trùng như vậy?`
+      setErrorWarning(
+        `Đã có 1 lượt "${opLabel}" cho container ${cleanContainerNo(containerNo)} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}) - không thể lưu trùng.`
       );
-      if (!confirmed) return;
+      return;
     }
 
     setErrorWarning(null);
@@ -1146,6 +1160,13 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
           <X className="w-5 h-5" />
         </button>
         <h3 className="text-base font-bold text-slate-900 border-b border-slate-200 pb-3 mb-4">Sửa Lượt Chấm Công</h3>
+
+        {errorWarning && (
+          <div className="mb-4 bg-amber-50 border-2 border-amber-400 p-3 rounded-xl text-amber-900 text-xs flex items-start space-x-2.5">
+            <AlertTriangle className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-amber-800">{errorWarning}</p>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-3.5">
           <div className="space-y-1">
