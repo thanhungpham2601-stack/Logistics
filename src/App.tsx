@@ -25,6 +25,7 @@ import {
   setContainerSizeActive,
   setDriverPin,
   setContainerTypeActive,
+  setDaoChuyenNoteActive,
   setDaoChuyenSubtypeActive,
   setEquipmentTypeActive,
   setNotePresetActive,
@@ -34,6 +35,7 @@ import {
   updateJob,
   upsertContainerSize,
   upsertContainerType,
+  upsertDaoChuyenNote,
   upsertDaoChuyenSubtype,
   upsertEquipmentType,
   upsertOperationType,
@@ -59,7 +61,7 @@ export default function App() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [jobs, setJobs] = useState<JobEntry[]>([]);
-  const [configLists, setConfigLists] = useState<ConfigLists>({ sizes: [], operations: [], lines: [], daoChuyenSubtypes: [], notePresets: [], equipmentTypes: [], containerTypes: [] });
+  const [configLists, setConfigLists] = useState<ConfigLists>({ sizes: [], operations: [], lines: [], daoChuyenSubtypes: [], daoChuyenNotes: [], notePresets: [], equipmentTypes: [], containerTypes: [] });
   const [rates, setRates] = useState<OperationRateRow[]>([]);
 
   const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
@@ -351,6 +353,16 @@ export default function App() {
     await refreshConfig();
   };
 
+  const handleAddDaoChuyenNote = async (code: string, label: string, subtypeCode: string) => {
+    await upsertDaoChuyenNote({ code, label, subtype_code: subtypeCode });
+    await refreshConfig();
+  };
+
+  const handleToggleDaoChuyenNote = async (code: string, isActive: boolean) => {
+    await setDaoChuyenNoteActive(code, isActive);
+    await refreshConfig();
+  };
+
   const handleAddEquipmentType = async (code: string, label: string) => {
     await upsertEquipmentType({ code, label });
     await refreshConfig();
@@ -449,7 +461,7 @@ export default function App() {
               shippingLines={configLists.lines.filter((l) => l.is_active).map((l) => l.code)}
               sizes={configLists.sizes.filter((s) => s.is_active)}
               operations={configLists.operations.filter((o) => o.is_active)}
-              daoChuyenSubtypes={configLists.daoChuyenSubtypes.filter((s) => s.is_active)}
+              daoChuyenNotes={configLists.daoChuyenNotes.filter((n) => n.is_active)}
               notePresets={configLists.notePresets.filter((n) => n.is_active)}
               equipmentTypes={configLists.equipmentTypes.filter((e) => e.is_active)}
               containerTypes={configLists.containerTypes.filter((c) => c.is_active)}
@@ -495,6 +507,8 @@ export default function App() {
               onAddOperationType={handleAddOperationType}
               onAddDaoChuyenSubtype={handleAddDaoChuyenSubtype}
               onToggleDaoChuyenSubtype={handleToggleDaoChuyenSubtype}
+              onAddDaoChuyenNote={handleAddDaoChuyenNote}
+              onToggleDaoChuyenNote={handleToggleDaoChuyenNote}
               onAddEquipmentType={handleAddEquipmentType}
               onToggleEquipmentType={handleToggleEquipmentType}
               onAddContainerType={handleAddContainerType}

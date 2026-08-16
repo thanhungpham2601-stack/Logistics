@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { JobEntry } from '../types';
-import { ContainerSizeRow, DaoChuyenSubtypeRow, OperationTypeRow } from './supabaseTypes';
+import { ContainerSizeRow, OperationTypeRow } from './supabaseTypes';
 import { formatDateTime, formatJobNotesDisplay } from '../utils';
 import { SummaryMatrix } from './reportMatrix';
 import { DriverProductionRow, ShiftSummaryRow } from './driverReportMatrix';
@@ -37,7 +37,6 @@ interface ExportShiftReportParams {
   jobs: JobEntry[];
   sizes: ContainerSizeRow[];
   operations: OperationTypeRow[];
-  daoChuyenSubtypes: DaoChuyenSubtypeRow[];
   subtitle: string;
   driverLabel: string;
   filenamePrefix: string;
@@ -45,7 +44,7 @@ interface ExportShiftReportParams {
 
 /** Xuất báo cáo ca ra file .xlsx với định dạng (màu, viền, merge) giống hệt bảng hiển thị trên web. */
 export async function exportShiftReportToExcel(params: ExportShiftReportParams): Promise<void> {
-  const { jobs, sizes, operations, daoChuyenSubtypes, subtitle, driverLabel, filenamePrefix } = params;
+  const { jobs, sizes, operations, subtitle, driverLabel, filenamePrefix } = params;
 
   const workbook = new ExcelJS.Workbook();
   const sheet = workbook.addWorksheet('Bao cao ca');
@@ -162,7 +161,7 @@ export async function exportShiftReportToExcel(params: ExportShiftReportParams):
     });
 
     const notesCell = sheet.getCell(r, notesCol);
-    notesCell.value = formatJobNotesDisplay(job, daoChuyenSubtypes);
+    notesCell.value = formatJobNotesDisplay(job);
     notesCell.border = THIN_BORDER;
     notesCell.alignment = { horizontal: 'left', vertical: 'middle' };
     notesCell.font = { size: 9 };

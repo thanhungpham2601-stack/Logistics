@@ -3,6 +3,7 @@ import { CargoStatus, ContainerSize, Driver, JobEntry, OperationType, Shift, Use
 import {
   ContainerSizeRow,
   ContainerTypeRow,
+  DaoChuyenNoteRow,
   DaoChuyenSubtypeRow,
   EquipmentTypeRow,
   JobEntryRow,
@@ -31,6 +32,7 @@ export interface ConfigLists {
   operations: OperationTypeRow[];
   lines: ShippingLineRow[];
   daoChuyenSubtypes: DaoChuyenSubtypeRow[];
+  daoChuyenNotes: DaoChuyenNoteRow[];
   notePresets: NotePresetRow[];
   equipmentTypes: EquipmentTypeRow[];
   containerTypes: ContainerTypeRow[];
@@ -184,11 +186,12 @@ export async function linkAuthUserId(accountId: string, authUserId: string): Pro
 // ===================== CONFIG (sizes / operations / lines) =====================
 
 export async function fetchConfigLists(): Promise<ConfigLists> {
-  const [sizesRes, opsRes, linesRes, subtypesRes, notePresetsRes, equipmentRes, containerTypesRes] = await Promise.all([
+  const [sizesRes, opsRes, linesRes, subtypesRes, notesRes, notePresetsRes, equipmentRes, containerTypesRes] = await Promise.all([
     supabase.from('container_sizes').select('*').order('sort_order'),
     supabase.from('operation_types').select('*').order('sort_order'),
     supabase.from('shipping_lines').select('*').order('sort_order'),
     supabase.from('dao_chuyen_subtypes').select('*').order('sort_order'),
+    supabase.from('dao_chuyen_notes').select('*').order('sort_order'),
     supabase.from('note_presets').select('*').order('sort_order'),
     supabase.from('equipment_types').select('*').order('sort_order'),
     supabase.from('container_types').select('*').order('sort_order'),
@@ -198,6 +201,7 @@ export async function fetchConfigLists(): Promise<ConfigLists> {
   if (opsRes.error) throw opsRes.error;
   if (linesRes.error) throw linesRes.error;
   if (subtypesRes.error) throw subtypesRes.error;
+  if (notesRes.error) throw notesRes.error;
   if (notePresetsRes.error) throw notePresetsRes.error;
   if (equipmentRes.error) throw equipmentRes.error;
   if (containerTypesRes.error) throw containerTypesRes.error;
@@ -207,6 +211,7 @@ export async function fetchConfigLists(): Promise<ConfigLists> {
     operations: opsRes.data as OperationTypeRow[],
     lines: linesRes.data as ShippingLineRow[],
     daoChuyenSubtypes: subtypesRes.data as DaoChuyenSubtypeRow[],
+    daoChuyenNotes: notesRes.data as DaoChuyenNoteRow[],
     notePresets: notePresetsRes.data as NotePresetRow[],
     equipmentTypes: equipmentRes.data as EquipmentTypeRow[],
     containerTypes: containerTypesRes.data as ContainerTypeRow[],
@@ -225,6 +230,16 @@ export async function upsertDaoChuyenSubtype(row: { code: string; label: string;
 
 export async function setDaoChuyenSubtypeActive(code: string, isActive: boolean): Promise<void> {
   const { error } = await supabase.from('dao_chuyen_subtypes').update({ is_active: isActive }).eq('code', code);
+  if (error) throw error;
+}
+
+export async function upsertDaoChuyenNote(row: { code: string; label: string; subtype_code: string; sort_order?: number }): Promise<void> {
+  const { error } = await supabase.from('dao_chuyen_notes').upsert(row, { onConflict: 'code' });
+  if (error) throw error;
+}
+
+export async function setDaoChuyenNoteActive(code: string, isActive: boolean): Promise<void> {
+  const { error } = await supabase.from('dao_chuyen_notes').update({ is_active: isActive }).eq('code', code);
   if (error) throw error;
 }
 

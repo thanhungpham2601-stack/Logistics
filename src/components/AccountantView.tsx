@@ -58,6 +58,8 @@ interface AccountantViewProps {
   onAddOperationType: (code: string, label: string) => Promise<void>;
   onAddDaoChuyenSubtype: (code: string, label: string) => Promise<void>;
   onToggleDaoChuyenSubtype: (code: string, isActive: boolean) => Promise<void>;
+  onAddDaoChuyenNote: (code: string, label: string, subtypeCode: string) => Promise<void>;
+  onToggleDaoChuyenNote: (code: string, isActive: boolean) => Promise<void>;
   onAddEquipmentType: (code: string, label: string) => Promise<void>;
   onToggleEquipmentType: (code: string, isActive: boolean) => Promise<void>;
   onAddContainerType: (code: string, label: string) => Promise<void>;
@@ -95,6 +97,8 @@ export default function AccountantView({
   onAddOperationType,
   onAddDaoChuyenSubtype,
   onToggleDaoChuyenSubtype,
+  onAddDaoChuyenNote,
+  onToggleDaoChuyenNote,
   onAddEquipmentType,
   onToggleEquipmentType,
   onAddContainerType,
@@ -221,7 +225,7 @@ export default function AccountantView({
   const [formSize, setFormSize] = useState<ContainerSize>('');
   const [formOperation, setFormOperation] = useState<OperationType>('nang_khach_hang');
   const [formCargoStatus, setFormCargoStatus] = useState<'rong' | 'hang'>('rong');
-  const [formSubType, setFormSubType] = useState<string>('');
+  const [formDaoChuyenNoteCode, setFormDaoChuyenNoteCode] = useState<string>('');
   const [formEquipment, setFormEquipment] = useState<string>('');
   const [formContainerType, setFormContainerType] = useState<string>('');
   const [formNotes, setFormNotes] = useState('');
@@ -332,7 +336,7 @@ export default function AccountantView({
     setFormSize(sizes[0]?.code ?? '');
     setFormOperation(operations[0]?.code ?? 'nang_khach_hang');
     setFormCargoStatus('rong');
-    setFormSubType(configLists.daoChuyenSubtypes[0]?.code ?? '');
+    setFormDaoChuyenNoteCode(configLists.daoChuyenNotes[0]?.code ?? '');
     setFormEquipment(configLists.equipmentTypes[0]?.code ?? '');
     setFormContainerType(configLists.containerTypes[0]?.code ?? '');
     setFormNotes('');
@@ -356,7 +360,12 @@ export default function AccountantView({
     setFormSize(job.size);
     setFormOperation(job.operation);
     setFormCargoStatus(job.cargoStatus);
-    setFormSubType(job.subType ?? configLists.daoChuyenSubtypes[0]?.code ?? '');
+    setFormDaoChuyenNoteCode(
+      configLists.daoChuyenNotes.find((n) => n.label === job.notes)?.code
+        ?? configLists.daoChuyenNotes.find((n) => n.subtype_code === job.subType)?.code
+        ?? configLists.daoChuyenNotes[0]?.code
+        ?? ''
+    );
     setFormEquipment(job.equipment ?? configLists.equipmentTypes[0]?.code ?? '');
     setFormContainerType(job.containerType ?? configLists.containerTypes[0]?.code ?? '');
     setFormNotes(job.notes || '');
@@ -374,6 +383,7 @@ export default function AccountantView({
     if (!formContainerNo.trim() || isMutating) return;
 
     const selectedDriverObj = drivers.find(d => d.id === formDriverId) || drivers[0];
+    const selectedDaoChuyenNote = configLists.daoChuyenNotes.find((n) => n.code === formDaoChuyenNoteCode);
 
     const jobData: JobEntry = {
       id: isEditing && editingJobId ? editingJobId : 'job-' + Date.now(),
@@ -388,10 +398,10 @@ export default function AccountantView({
       size: formSize,
       operation: formOperation,
       cargoStatus: formCargoStatus,
-      subType: formOperation === 'dao_chuyen' ? formSubType || undefined : undefined,
+      subType: formOperation === 'dao_chuyen' ? selectedDaoChuyenNote?.subtype_code : undefined,
       equipment: formEquipment || undefined,
       containerType: formContainerType || undefined,
-      notes: formNotes.trim()
+      notes: formOperation === 'dao_chuyen' ? (selectedDaoChuyenNote?.label ?? '') : formNotes.trim()
     };
 
     // Chặn trùng lượt: cùng tài xế + cùng ca + cùng container + cùng tác nghiệp. Khác ca thì
@@ -462,7 +472,6 @@ export default function AccountantView({
         jobs: filteredJobs,
         sizes,
         operations,
-        daoChuyenSubtypes: configLists.daoChuyenSubtypes,
         subtitle: getShiftSubtitle(),
         driverLabel: getSelectedDriverName(),
         filenamePrefix: `Bao_Cao_Ca_${filterDate}_${isRangeMode ? filterToDate : filterShift}`,
@@ -966,6 +975,8 @@ export default function AccountantView({
           onAddOperationType={onAddOperationType}
           onAddDaoChuyenSubtype={onAddDaoChuyenSubtype}
           onToggleDaoChuyenSubtype={onToggleDaoChuyenSubtype}
+          onAddDaoChuyenNote={onAddDaoChuyenNote}
+          onToggleDaoChuyenNote={onToggleDaoChuyenNote}
           onAddEquipmentType={onAddEquipmentType}
           onToggleEquipmentType={onToggleEquipmentType}
           onAddContainerType={onAddContainerType}
@@ -1131,9 +1142,9 @@ export default function AccountantView({
                         {/* Notes Column */}
                         <td
                           className="text-left px-2 font-sans text-[11px] text-slate-800 whitespace-nowrap truncate max-w-[180px]"
-                          title={formatJobNotesDisplay(job, configLists.daoChuyenSubtypes)}
+                          title={formatJobNotesDisplay(job)}
                         >
-                          {formatJobNotesDisplay(job, configLists.daoChuyenSubtypes)}
+                          {formatJobNotesDisplay(job)}
                         </td>
 
                         {/* Interactive Edit/Delete Actions (Hidden in Print) */}
@@ -1378,16 +1389,16 @@ export default function AccountantView({
                 </div>
               )}
 
-              {formOperation === 'dao_chuyen' && configLists.daoChuyenSubtypes.length > 0 && (
+              {formOperation === 'dao_chuyen' && configLists.daoChuyenNotes.length > 0 && (
                 <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-700 uppercase">Phân loại đảo chuyển *</label>
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Ghi chú đảo chuyển *</label>
                   <select
-                    value={formSubType}
-                    onChange={(e) => setFormSubType(e.target.value)}
+                    value={formDaoChuyenNoteCode}
+                    onChange={(e) => setFormDaoChuyenNoteCode(e.target.value)}
                     className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold focus:outline-none"
                   >
-                    {configLists.daoChuyenSubtypes.map((st) => (
-                      <option key={st.code} value={st.code}>{st.label}</option>
+                    {configLists.daoChuyenNotes.map((note) => (
+                      <option key={note.code} value={note.code}>{note.label}</option>
                     ))}
                   </select>
                 </div>
@@ -1431,17 +1442,19 @@ export default function AccountantView({
                 </div>
               </div>
 
-              {/* Notes */}
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-700 uppercase">Ghi chú</label>
-                <input
-                  type="text"
-                  value={formNotes}
-                  onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="Ghi chú chi tiết (ví dụ: Đảo chuyển hầm tàu...)"
-                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
-                />
-              </div>
+              {/* Notes - ẩn khi Đảo chuyển vì đã có Ghi chú đảo chuyển ở trên đóng vai trò ghi chú của lượt này */}
+              {formOperation !== 'dao_chuyen' && (
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase">Ghi chú</label>
+                  <input
+                    type="text"
+                    value={formNotes}
+                    onChange={(e) => setFormNotes(e.target.value)}
+                    placeholder="Ghi chú chi tiết (ví dụ: Đảo chuyển hầm tàu...)"
+                    className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                  />
+                </div>
+              )}
 
               <div className="pt-3 flex justify-end space-x-2 border-t border-slate-100">
                 <button

@@ -9,7 +9,7 @@ import {
   Edit, X, Sun, Moon, Package, PackageOpen, Forklift, Menu, Download
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
-import { ContainerSizeRow, ContainerTypeRow, DaoChuyenSubtypeRow, EquipmentTypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
+import { ContainerSizeRow, ContainerTypeRow, DaoChuyenNoteRow, EquipmentTypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
 import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInDateRange, isJobInShift, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
 import DateRangePicker from './DateRangePicker';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
@@ -21,7 +21,7 @@ interface DriverViewProps {
   shippingLines: string[];
   sizes: ContainerSizeRow[];
   operations: OperationTypeRow[];
-  daoChuyenSubtypes: DaoChuyenSubtypeRow[];
+  daoChuyenNotes: DaoChuyenNoteRow[];
   notePresets: NotePresetRow[];
   equipmentTypes: EquipmentTypeRow[];
   containerTypes: ContainerTypeRow[];
@@ -65,7 +65,7 @@ export default function DriverView({
   shippingLines,
   sizes,
   operations,
-  daoChuyenSubtypes,
+  daoChuyenNotes,
   notePresets,
   equipmentTypes,
   containerTypes,
@@ -89,7 +89,7 @@ export default function DriverView({
   const [useCurrentTime, setUseCurrentTime] = useState(true);
   const [manualTimestamp, setManualTimestamp] = useState('');
   const [selectedCargoStatus, setSelectedCargoStatus] = useState<CargoStatus>('rong');
-  const [selectedSubType, setSelectedSubType] = useState<string>(daoChuyenSubtypes[0]?.code ?? '');
+  const [selectedDaoChuyenNote, setSelectedDaoChuyenNote] = useState<string>(daoChuyenNotes[0]?.code ?? '');
   const [notes, setNotes] = useState('');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorWarning, setErrorWarning] = useState<string | null>(null);
@@ -199,6 +199,8 @@ export default function DriverView({
       return;
     }
 
+    const selectedNote = daoChuyenNotes.find((n) => n.code === selectedDaoChuyenNote);
+
     setIsSubmitting(true);
     try {
       await onAddJob({
@@ -209,10 +211,10 @@ export default function DriverView({
         size: selectedSize,
         operation: selectedOperation,
         cargoStatus: selectedCargoStatus,
-        subType: selectedOperation === 'dao_chuyen' ? selectedSubType || undefined : undefined,
+        subType: selectedOperation === 'dao_chuyen' ? selectedNote?.subtype_code : undefined,
         equipment: selectedEquipment || undefined,
         containerType: selectedContainerType || undefined,
-        notes: notes.trim()
+        notes: selectedOperation === 'dao_chuyen' ? (selectedNote?.label ?? '') : notes.trim()
       });
 
       // Reset Form - đưa toàn bộ lựa chọn về lại mặc định ban đầu, không giữ lại lựa chọn của lượt vừa nhập
@@ -228,7 +230,7 @@ export default function DriverView({
       setSelectedEquipment(equipmentTypes[0]?.code ?? '');
       setSelectedOperation(operations[0]?.code ?? 'nang_khach_hang');
       setSelectedCargoStatus('rong');
-      setSelectedSubType(daoChuyenSubtypes[0]?.code ?? '');
+      setSelectedDaoChuyenNote(daoChuyenNotes[0]?.code ?? '');
       setErrorWarning(null);
       setSuccessMessage(`Đã chấm công thành công công ${finalContainerNo}!`);
 
@@ -281,7 +283,6 @@ export default function DriverView({
         jobs: jobsForExport,
         sizes,
         operations,
-        daoChuyenSubtypes,
         subtitle,
         driverLabel: currentDriver.name,
         filenamePrefix,
@@ -748,65 +749,69 @@ export default function DriverView({
             </div>
           </div>
 
-          {/* 7b. Phân loại đảo chuyển - chỉ hiện khi chọn tác nghiệp Đảo chuyển */}
-          {selectedOperation === 'dao_chuyen' && daoChuyenSubtypes.length > 0 && (
+          {/* 7b. Ghi chú đảo chuyển - chỉ hiện khi chọn tác nghiệp Đảo chuyển. Đây chính là Ghi chú
+              của lượt này; phân loại đảo chuyển (dùng cho báo cáo admin) được suy ra tự động theo
+              ghi chú đã chọn, tài xế không cần tự chọn phân loại riêng. */}
+          {selectedOperation === 'dao_chuyen' && daoChuyenNotes.length > 0 && (
             <div className="space-y-2">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                Phân Loại Đảo Chuyển <span className="text-red-600">*</span>
+                Ghi Chú Đảo Chuyển <span className="text-red-600">*</span>
               </label>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                {daoChuyenSubtypes.map((st) => (
+                {daoChuyenNotes.map((note) => (
                   <button
-                    key={st.code}
+                    key={note.code}
                     type="button"
-                    onClick={() => setSelectedSubType(st.code)}
+                    onClick={() => setSelectedDaoChuyenNote(note.code)}
                     className={`py-2.5 px-2 text-center font-bold text-[11px] rounded-xl border-2 transition-all cursor-pointer ${
-                      selectedSubType === st.code
+                      selectedDaoChuyenNote === note.code
                         ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-500/30'
                         : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
                     }`}
                   >
-                    {st.label}
+                    {note.label}
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* 8. Ghi Chú */}
-          <div className="space-y-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-              8. Ghi Chú (Nếu có)
-            </label>
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Nhập ghi chú chi tiết..."
-              className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-blue-600 transition-colors placeholder:text-slate-400"
-            />
+          {/* 8. Ghi Chú - ẩn khi Đảo chuyển vì đã có Ghi Chú Đảo Chuyển ở trên đóng vai trò ghi chú của lượt này */}
+          {selectedOperation !== 'dao_chuyen' && (
+            <div className="space-y-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+                8. Ghi Chú (Nếu có)
+              </label>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Nhập ghi chú chi tiết..."
+                className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-blue-600 transition-colors placeholder:text-slate-400"
+              />
 
-            {/* Quick Notes Suggestions */}
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {notePresets.filter((p) => p.is_active).map((preset) => {
-                const isActive = notes.includes(preset.label);
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => selectQuickNote(preset.label)}
-                    className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border-2 transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-blue-600 border-blue-600 text-white'
-                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                    }`}
-                  >
-                    {isActive ? '✓ ' : '+ '}{preset.label}
-                  </button>
-                );
-              })}
+              {/* Quick Notes Suggestions */}
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {notePresets.filter((p) => p.is_active).map((preset) => {
+                  const isActive = notes.includes(preset.label);
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => selectQuickNote(preset.label)}
+                      className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border-2 transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-blue-600 border-blue-600 text-white'
+                          : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+                      }`}
+                    >
+                      {isActive ? '✓ ' : '+ '}{preset.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Submit Button - khoá tới khi số hiệu container đúng chuẩn 4 chữ + 7 số, hoặc khi đang lưu/xoá */}
           <button
@@ -969,9 +974,9 @@ export default function DriverView({
                           })()}
                         </span>
                       </div>
-                      {formatJobNotesDisplay(job, daoChuyenSubtypes) && (
+                      {formatJobNotesDisplay(job) && (
                         <p className="text-[11px] text-amber-700 italic font-medium">
-                          Ghi chú: {formatJobNotesDisplay(job, daoChuyenSubtypes)}
+                          Ghi chú: {formatJobNotesDisplay(job)}
                         </p>
                       )}
                     </div>
@@ -1057,7 +1062,7 @@ export default function DriverView({
           sizes={sizes}
           operations={operations}
           shippingLines={shippingLines}
-          daoChuyenSubtypes={daoChuyenSubtypes}
+          daoChuyenNotes={daoChuyenNotes}
           equipmentTypes={equipmentTypes}
           containerTypes={containerTypes}
           onClose={() => setEditingJob(null)}
@@ -1077,20 +1082,25 @@ interface EditJobModalProps {
   sizes: ContainerSizeRow[];
   operations: OperationTypeRow[];
   shippingLines: string[];
-  daoChuyenSubtypes: DaoChuyenSubtypeRow[];
+  daoChuyenNotes: DaoChuyenNoteRow[];
   equipmentTypes: EquipmentTypeRow[];
   containerTypes: ContainerTypeRow[];
   onClose: () => void;
   onSave: (patch: Partial<JobEntry>) => Promise<void>;
 }
 
-function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, daoChuyenSubtypes, equipmentTypes, containerTypes, onClose, onSave }: EditJobModalProps) {
+function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, daoChuyenNotes, equipmentTypes, containerTypes, onClose, onSave }: EditJobModalProps) {
   const [containerNo, setContainerNo] = useState(job.containerNo);
   const [line, setLine] = useState(job.line);
   const [size, setSize] = useState<ContainerSize>(job.size);
   const [operation, setOperation] = useState<OperationType>(job.operation);
   const [cargoStatus, setCargoStatus] = useState<CargoStatus>(job.cargoStatus);
-  const [subType, setSubType] = useState<string>(job.subType ?? daoChuyenSubtypes[0]?.code ?? '');
+  const [daoChuyenNoteCode, setDaoChuyenNoteCode] = useState<string>(
+    daoChuyenNotes.find((n) => n.label === job.notes)?.code
+      ?? daoChuyenNotes.find((n) => n.subtype_code === job.subType)?.code
+      ?? daoChuyenNotes[0]?.code
+      ?? ''
+  );
   const [equipment, setEquipment] = useState<string>(job.equipment ?? equipmentTypes[0]?.code ?? '');
   const [containerType, setContainerType] = useState<string>(job.containerType ?? containerTypes[0]?.code ?? '');
   const [timestamp, setTimestamp] = useState(toDatetimeLocalValue(new Date(job.timestamp)));
@@ -1132,6 +1142,8 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
       return;
     }
 
+    const selectedNote = daoChuyenNotes.find((n) => n.code === daoChuyenNoteCode);
+
     setErrorWarning(null);
     setIsSaving(true);
     try {
@@ -1141,12 +1153,12 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
         size,
         operation,
         cargoStatus,
-        subType: operation === 'dao_chuyen' ? subType || undefined : undefined,
+        subType: operation === 'dao_chuyen' ? selectedNote?.subtype_code : undefined,
         equipment: equipment || undefined,
         containerType: containerType || undefined,
         timestamp: parsedTimestamp.toISOString(),
         shift: getAutoShift(parsedTimestamp),
-        notes: notes.trim(),
+        notes: operation === 'dao_chuyen' ? (selectedNote?.label ?? '') : notes.trim(),
       });
     } finally {
       setIsSaving(false);
@@ -1280,16 +1292,16 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
             </select>
           </div>
 
-          {operation === 'dao_chuyen' && daoChuyenSubtypes.length > 0 && (
+          {operation === 'dao_chuyen' && daoChuyenNotes.length > 0 && (
             <div className="space-y-1">
-              <label className="block text-[11px] font-bold uppercase text-slate-600">Phân loại đảo chuyển <span className="text-red-600">*</span></label>
+              <label className="block text-[11px] font-bold uppercase text-slate-600">Ghi chú đảo chuyển <span className="text-red-600">*</span></label>
               <select
-                value={subType}
-                onChange={(e) => setSubType(e.target.value)}
+                value={daoChuyenNoteCode}
+                onChange={(e) => setDaoChuyenNoteCode(e.target.value)}
                 className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none"
               >
-                {daoChuyenSubtypes.map((st) => (
-                  <option key={st.code} value={st.code}>{st.label}</option>
+                {daoChuyenNotes.map((note) => (
+                  <option key={note.code} value={note.code}>{note.label}</option>
                 ))}
               </select>
             </div>
@@ -1315,15 +1327,17 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
             </div>
           </div>
 
-          <div className="space-y-1">
-            <label className="block text-[11px] font-bold uppercase text-slate-600">Ghi chú</label>
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-blue-600"
-            />
-          </div>
+          {operation !== 'dao_chuyen' && (
+            <div className="space-y-1">
+              <label className="block text-[11px] font-bold uppercase text-slate-600">Ghi chú</label>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full bg-white border-2 border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-blue-600"
+              />
+            </div>
+          )}
 
           <div className="pt-2 flex justify-end gap-2 border-t border-slate-200">
             <button

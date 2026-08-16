@@ -72,6 +72,16 @@ export interface DaoChuyenSubtypeRow {
   is_active: boolean;
 }
 
+/** "Ghi chú đảo chuyển" (vd "Hạ độ cao dọn bãi") - tài xế chọn ghi chú này, subtype_code là
+ *  "Phân loại đảo chuyển" tương ứng dùng để admin/kế toán làm báo cáo, suy ra tự động. */
+export interface DaoChuyenNoteRow {
+  code: string;
+  label: string;
+  subtype_code: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
 export interface EquipmentTypeRow {
   code: string;
   label: string;

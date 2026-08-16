@@ -26,6 +26,8 @@ interface AdminSettingsViewProps {
   onAddOperationType: (code: string, label: string) => Promise<void>;
   onAddDaoChuyenSubtype: (code: string, label: string) => Promise<void>;
   onToggleDaoChuyenSubtype: (code: string, isActive: boolean) => Promise<void>;
+  onAddDaoChuyenNote: (code: string, label: string, subtypeCode: string) => Promise<void>;
+  onToggleDaoChuyenNote: (code: string, isActive: boolean) => Promise<void>;
   onAddEquipmentType: (code: string, label: string) => Promise<void>;
   onToggleEquipmentType: (code: string, isActive: boolean) => Promise<void>;
   onAddContainerType: (code: string, label: string) => Promise<void>;
@@ -58,6 +60,8 @@ export default function AdminSettingsView({
   onAddOperationType,
   onAddDaoChuyenSubtype,
   onToggleDaoChuyenSubtype,
+  onAddDaoChuyenNote,
+  onToggleDaoChuyenNote,
   onAddEquipmentType,
   onToggleEquipmentType,
   onAddContainerType,
@@ -132,6 +136,8 @@ export default function AdminSettingsView({
   const [newOpLabel, setNewOpLabel] = useState('');
   const [newSubtypeCode, setNewSubtypeCode] = useState('');
   const [newSubtypeLabel, setNewSubtypeLabel] = useState('');
+  const [newDaoChuyenNoteLabel, setNewDaoChuyenNoteLabel] = useState('');
+  const [newDaoChuyenNoteSubtype, setNewDaoChuyenNoteSubtype] = useState('');
   const [newEquipmentCode, setNewEquipmentCode] = useState('');
   const [newEquipmentLabel, setNewEquipmentLabel] = useState('');
   const [newContainerTypeCode, setNewContainerTypeCode] = useState('');
@@ -259,6 +265,20 @@ export default function AdminSettingsView({
       await onAddDaoChuyenSubtype(newSubtypeCode.trim().toLowerCase().replace(/\s+/g, '_'), newSubtypeLabel.trim());
       setNewSubtypeCode('');
       setNewSubtypeLabel('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleAddDaoChuyenNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const subtypeCode = newDaoChuyenNoteSubtype || configLists.daoChuyenSubtypes[0]?.code;
+    if (!newDaoChuyenNoteLabel.trim() || !subtypeCode) return;
+    setBusy(true);
+    try {
+      const code = stripDiacritics(newDaoChuyenNoteLabel.trim()).replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+      await onAddDaoChuyenNote(code, newDaoChuyenNoteLabel.trim(), subtypeCode);
+      setNewDaoChuyenNoteLabel('');
     } finally {
       setBusy(false);
     }
@@ -792,6 +812,56 @@ export default function AdminSettingsView({
                       className={`cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${st.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
                     >
                       {activeKey === `subtype-${st.code}` ? <Loader2 className="w-4 h-4 animate-spin" /> : st.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Ghi chú đảo chuyển - danh sách ghi chú cụ thể tài xế chọn khi tác nghiệp Đảo chuyển,
+                mỗi ghi chú gắn với 1 Phân Loại Đảo Chuyển ở trên để làm báo cáo. */}
+            <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 space-y-3">
+              <h3 className="text-xs font-black uppercase text-slate-500 flex items-center space-x-1.5">
+                <MessageSquareText className="w-4 h-4 text-orange-500" />
+                <span>Ghi Chú Đảo Chuyển</span>
+              </h3>
+              <form onSubmit={handleAddDaoChuyenNote} className="space-y-1.5">
+                <input
+                  value={newDaoChuyenNoteLabel}
+                  onChange={(e) => setNewDaoChuyenNoteLabel(e.target.value)}
+                  placeholder="Nội dung ghi chú (vd: Hạ độ cao dọn bãi)"
+                  className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                />
+                <div className="flex gap-1.5">
+                  <select
+                    value={newDaoChuyenNoteSubtype || configLists.daoChuyenSubtypes[0]?.code || ''}
+                    onChange={(e) => setNewDaoChuyenNoteSubtype(e.target.value)}
+                    className="flex-1 border border-slate-300 rounded-lg px-2 py-1.5 text-xs focus:outline-none"
+                  >
+                    {configLists.daoChuyenSubtypes.map((st) => (
+                      <option key={st.code} value={st.code}>{st.label}</option>
+                    ))}
+                  </select>
+                  <button type="submit" disabled={busy} className="p-1.5 bg-orange-600 hover:bg-orange-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg cursor-pointer">
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+              </form>
+              <div className="space-y-1 max-h-64 overflow-y-auto">
+                {configLists.daoChuyenNotes.map((note) => (
+                  <div key={note.code} className="flex items-center justify-between text-xs bg-slate-50 rounded-lg px-2 py-1.5">
+                    <div>
+                      <span className="font-bold text-slate-700">{note.label}</span>
+                      <span className="block text-[10px] text-slate-400">
+                        {configLists.daoChuyenSubtypes.find((st) => st.code === note.subtype_code)?.label ?? note.subtype_code}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => runAction(`dc-note-${note.code}`, () => onToggleDaoChuyenNote(note.code, !note.is_active))}
+                      disabled={busy}
+                      className={`cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0 ${note.is_active ? 'text-emerald-600' : 'text-slate-300'}`}
+                    >
+                      {activeKey === `dc-note-${note.code}` ? <Loader2 className="w-4 h-4 animate-spin" /> : note.is_active ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
                     </button>
                   </div>
                 ))}

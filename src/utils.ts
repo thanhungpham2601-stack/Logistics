@@ -99,17 +99,12 @@ export function cleanPastedContainerNo(e: ClipboardEvent<HTMLInputElement>): str
 }
 
 /**
- * Tác nghiệp "Đảo chuyển" bắt buộc chọn "Phân loại đảo chuyển" (khách hàng, xuất tàu, sửa chữa...)
- * - đây mới là phân loại thật sự của lượt đó. Hiển thị đúng phân loại này ở mọi nơi có cột Ghi chú
- * (web, in, Excel) - không ghép thêm ghi chú tự do, kể cả khi có.
+ * Cột Ghi chú luôn hiển thị đúng ghi chú đã lưu (web, in, Excel). Với tác nghiệp "Đảo chuyển",
+ * ghi chú chính là 1 trong các "Ghi chú đảo chuyển" tài xế chọn (vd "Hạ độ cao dọn bãi") - phân
+ * loại đảo chuyển (subType) được suy ra tự động từ ghi chú đó, chỉ dùng riêng cho báo cáo admin.
  */
-export function formatJobNotesDisplay(
-  job: { operation: string; subType?: string | null; notes?: string | null },
-  daoChuyenSubtypes: { code: string; label: string }[]
-): string {
-  const subTypeLabel =
-    job.operation === 'dao_chuyen' ? daoChuyenSubtypes.find((st) => st.code === job.subType)?.label : undefined;
-  return subTypeLabel || job.notes || '';
+export function formatJobNotesDisplay(job: { notes?: string | null }): string {
+  return job.notes || '';
 }
 
 /** Ca tự nhận diện theo giờ Việt Nam hiện tại: 07:00-18:59 = ca ngày, còn lại = ca đêm. */
