@@ -170,9 +170,12 @@ export async function fetchAccountByAuthUserId(authUserId: string): Promise<Acco
   return data ? profileToAccount(data as ProfileRow) : null;
 }
 
-/** Tìm tài khoản theo email (admin phải gán email trước thì mới đăng nhập Google được). */
+/** Tìm tài khoản theo email (admin phải gán email trước thì mới đăng nhập Google được).
+ *  Không phân biệt hoa/thường (vd admin gõ "User@Gmail.com" nhưng Google trả về "user@gmail.com"
+ *  vẫn khớp) - dùng ilike thay vì eq, escape sẵn ký tự đại diện %/_ để so khớp đúng nghĩa đen. */
 export async function fetchAccountByEmail(email: string): Promise<Account | null> {
-  const { data, error } = await supabase.from('profiles').select('*').eq('email', email).maybeSingle();
+  const escaped = email.replace(/[%_\\]/g, (c) => `\\${c}`);
+  const { data, error } = await supabase.from('profiles').select('*').ilike('email', escaped).maybeSingle();
   if (error) throw error;
   return data ? profileToAccount(data as ProfileRow) : null;
 }
