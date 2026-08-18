@@ -159,9 +159,11 @@ export default function DriverView({
   const dayShiftStats = countByOperation(dayShiftJobs);
   const nightShiftStats = countByOperation(nightShiftJobs);
   const currentShift = getAutoShift(currentTime);
+  // "DD/MM" - đủ để phân biệt ngày trên thẻ thống kê (ca đêm bắc qua 2 ngày), bỏ năm cho gọn.
+  const shortDate = (dateStr: string) => formatDateOnly(dateStr).slice(0, 5);
 
   // Tìm kiếm + phân trang lịch sử của tôi - không phân biệt dấu, giống ô tìm kiếm bên báo cáo.
-  const HISTORY_PAGE_SIZE = 5;
+  const HISTORY_PAGE_SIZE = 20;
   const filteredMyJobs = historySearch
     ? myJobs.filter((job) => {
         const q = stripDiacritics(historySearch);
@@ -454,10 +456,12 @@ export default function DriverView({
               ca ngày 07:00-19:00 hôm nay, ca đêm 19:00-07:00 (ca đang chạy hoặc ca vừa kết thúc sáng nay). */}
           <div className="grid grid-cols-2 gap-3">
             {([
-              { key: 'day' as const, label: 'Ca ngày', range: '07:00 - 19:00', icon: <Sun className="w-3.5 h-3.5" />,
+              { key: 'day' as const, label: 'Ca ngày',
+                range: `07:00 - 19:00 · ${shortDate(shiftDateFor('day'))}`, icon: <Sun className="w-3.5 h-3.5" />,
                 jobs: dayShiftJobs, stats: dayShiftStats,
                 card: 'bg-amber-50 border-amber-200', text: 'text-amber-700', ring: 'ring-2 ring-amber-400' },
-              { key: 'night' as const, label: 'Ca đêm', range: '19:00 - 07:00', icon: <Moon className="w-3.5 h-3.5" />,
+              { key: 'night' as const, label: 'Ca đêm',
+                range: `19:00 ${shortDate(shiftDateFor('night'))} - 07:00 ${shortDate(addDaysToDateStr(shiftDateFor('night'), 1))}`, icon: <Moon className="w-3.5 h-3.5" />,
                 jobs: nightShiftJobs, stats: nightShiftStats,
                 card: 'bg-indigo-50 border-indigo-200', text: 'text-indigo-700', ring: 'ring-2 ring-indigo-400' },
             ]).map((shift) => (
