@@ -1,17 +1,13 @@
-import React, { useMemo, useState, lazy, Suspense } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { TrendingUp, TrendingDown, Minus, Users, Ship, Activity, Sun, Moon, Package, PackageOpen, Box } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Users, Ship, Activity, Sun, Moon, Package, PackageOpen } from 'lucide-react';
 import { JobEntry, Driver } from '../types';
 import { ContainerSizeRow, OperationTypeRow } from '../lib/supabaseTypes';
 import { isJobInDateRange, todayVN, addDaysToDateStr, daysBetweenDateStr, toVNDateStr, formatDateOnly } from '../utils';
 import DateRangePicker from './DateRangePicker';
-
-// Tách riêng chunk cho three.js/@react-three/fiber - chỉ tải khi người dùng thực sự mở trang
-// Tổng Quan, không đụng vào bundle chính (đặc biệt là màn hình tài xế dùng ngoài trời/4G).
-const PortScene3D = lazy(() => import('./PortScene3D'));
 
 interface DashboardOverviewProps {
   jobs: JobEntry[];
@@ -205,23 +201,6 @@ export default function DashboardOverview({ jobs, drivers, sizes, operations }: 
             <KpiCard label="Tài xế hoạt động" value={String(activeDrivers)} suffix={`/ ${drivers.length} tài xế`} icon={Users} colorVar="#7c3aed" />
             <KpiCard label="Hãng tàu giao dịch" value={String(activeLines)} suffix="hãng" icon={Ship} colorVar="#d97706" />
           </div>
-
-          {/* Mô phỏng bãi cảng 3D - màu/số lượng container phản ánh tỷ trọng top hãng tàu thật
-              trong kỳ đang xem. Canvas three.js được tách chunk riêng (lazy) nên chỉ tải khi
-              trang này thực sự mở, không ảnh hưởng tốc độ các màn hình khác. */}
-          <ChartCard title="Mô Phỏng Bãi Cảng" subtitle="Màu container phản ánh tỷ trọng top hãng tàu trong kỳ">
-            <div className="h-72 rounded-xl overflow-hidden bg-gradient-to-b from-sky-50 to-slate-100">
-              <Suspense
-                fallback={
-                  <div className="w-full h-full flex items-center justify-center text-slate-400 text-xs gap-2 animate-pulse">
-                    <Box className="w-5 h-5" /> Đang tải mô hình 3D...
-                  </div>
-                }
-              >
-                <PortScene3D lineData={lineData} />
-              </Suspense>
-            </div>
-          </ChartCard>
 
           {/* Xu hướng theo ngày */}
           <ChartCard title="Xu hướng sản lượng theo ngày" subtitle="Chia theo ca ngày / ca đêm">
