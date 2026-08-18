@@ -23,14 +23,16 @@ const PRINT_PAGE_SETUP: Partial<ExcelJS.PageSetup> = {
   margins: { left: 0.3, right: 0.3, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
 };
 
-// 'medium' chứ không phải 'thin' - báo cáo có thể lên tới hàng chục cột (nhiều loại tác nghiệp x
-// size), khi co ép vừa 1 trang A4 ngang (PRINT_PAGE_SETUP.fitToWidth) đường kẻ 'thin' (hairline)
-// bị co nhỏ tới mức khi in không còn hiện ra, nhìn như mất hẳn cột phân cách.
+// Viền 'thin' - độ đậm mặc định/bình thường của bảng trong Excel. Trước đây dùng 'medium' để
+// đường kẻ không bị mờ khi co ép vừa 1 trang A4 ngang lúc IN (PRINT_PAGE_SETUP.fitToWidth), nhưng
+// khi xem file trên máy thì quá đậm/nặng nề nên đã chuyển về 'thin'. Nếu bản in ra giấy bị mờ nét
+// kẻ (báo cáo nhiều cột: số loại tác nghiệp x số size), cân nhắc giảm số cột hoặc chỉnh lại
+// fitToWidth thay vì làm đậm toàn bộ đường kẻ.
 const THIN_BORDER = {
-  top: { style: 'medium' as const, color: { argb: 'FF000000' } },
-  left: { style: 'medium' as const, color: { argb: 'FF000000' } },
-  bottom: { style: 'medium' as const, color: { argb: 'FF000000' } },
-  right: { style: 'medium' as const, color: { argb: 'FF000000' } },
+  top: { style: 'thin' as const, color: { argb: 'FF000000' } },
+  left: { style: 'thin' as const, color: { argb: 'FF000000' } },
+  bottom: { style: 'thin' as const, color: { argb: 'FF000000' } },
+  right: { style: 'thin' as const, color: { argb: 'FF000000' } },
 };
 
 interface ExportShiftReportParams {

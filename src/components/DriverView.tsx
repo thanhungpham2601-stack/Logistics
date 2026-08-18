@@ -10,8 +10,7 @@ import {
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
 import { ContainerSizeRow, ContainerTypeRow, DaoChuyenNoteRow, EquipmentTypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInDateRange, isJobInShift, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
-import DateRangePicker from './DateRangePicker';
+import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInShift, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
 
 interface DriverViewProps {
@@ -99,9 +98,9 @@ export default function DriverView({
   const [editingJob, setEditingJob] = useState<JobEntry | null>(null);
   const [historySearch, setHistorySearch] = useState('');
   const [historyPage, setHistoryPage] = useState(0);
-  const [historyFromDate, setHistoryFromDate] = useState(() => addDaysToDateStr(todayVN(), -2));
-  const [historyToDate, setHistoryToDate] = useState(() => todayVN());
-  const [exportShift, setExportShift] = useState<'day' | 'night'>('day');
+  // Ca dang xem o "San luong cua toi" - dung chung cho ca danh sach lan file Excel xuat ra,
+  // mac dinh la ca dang chay tai thoi diem mo man hinh.
+  const [listShift, setListShift] = useState<'day' | 'night'>(() => getAutoShift(new Date()));
   const [isExporting, setIsExporting] = useState(false);
   const isBusy = isSubmitting || deletingJobId !== null;
 
@@ -128,15 +127,38 @@ export default function DriverView({
   const minAllowedTimestamp = new Date();
   minAllowedTimestamp.setDate(minAllowedTimestamp.getDate() - 3);
 
-  // Filter jobs submitted by THIS driver, theo khoảng ngày đang chọn (mặc định 3 ngày gần nhất)
+  // Ngày báo cáo của một ca, suy ra từ thời điểm hiện tại - dùng chung cho bộ lọc ca ở
+  // "Sản lượng của tôi", phần thống kê ca hôm nay và file Excel xuất ra, để 3 chỗ luôn khớp số liệu.
+  // Quy ước (giống isJobInShift): "ca đêm ngày X" bắt đầu 19:00 ngày X, kết thúc 07:00 ngày X+1.
+  const nowHourVN = Number(
+    new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(currentTime)
+  );
+  const shiftDateFor = (shift: 'day' | 'night') => {
+    const today = todayVN();
+    // Ca ngày luôn là hôm nay; ca đêm sau 19h là ca đang chạy, trước 19h là ca vừa kết thúc sáng nay.
+    return shift === 'day' ? today : nowHourVN >= 19 ? today : addDaysToDateStr(today, -1);
+  };
+
+  const listShiftDate = shiftDateFor(listShift);
+
+  // Filter jobs submitted by THIS driver, theo đúng ca đang chọn
   const myJobs = jobs
-    .filter(job => job.driverId === currentDriver.id && isJobInDateRange(job.timestamp, historyFromDate, historyToDate))
+    .filter(job => job.driverId === currentDriver.id && isJobInShift(job.timestamp, listShiftDate, listShift))
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-  // Count stats for this driver today - luôn phản ánh đúng "hôm nay", không phụ thuộc khoảng ngày đang lọc ở danh sách bên dưới
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const myTodayJobs = jobs.filter(j => j.driverId === currentDriver.id && new Date(j.timestamp) >= todayStart);
+  // Thống kê ca hôm nay - tách riêng ca ngày và ca đêm theo đúng quy ước ca của báo cáo,
+  // không phụ thuộc ca đang chọn ở danh sách bên dưới.
+  const myJobsAll = jobs.filter(j => j.driverId === currentDriver.id);
+  const dayShiftJobs = myJobsAll.filter(j => isJobInShift(j.timestamp, shiftDateFor('day'), 'day'));
+  const nightShiftJobs = myJobsAll.filter(j => isJobInShift(j.timestamp, shiftDateFor('night'), 'night'));
+  const countByOperation = (list: JobEntry[]) => ({
+    lifted: list.filter(j => j.operation === 'nang_khach_hang').length,
+    lowered: list.filter(j => j.operation === 'ha_khach_hang').length,
+    other: list.filter(j => !['nang_khach_hang', 'ha_khach_hang'].includes(j.operation)).length,
+  });
+  const dayShiftStats = countByOperation(dayShiftJobs);
+  const nightShiftStats = countByOperation(nightShiftJobs);
+  const currentShift = getAutoShift(currentTime);
 
   // Tìm kiếm + phân trang lịch sử của tôi - không phân biệt dấu, giống ô tìm kiếm bên báo cáo.
   const HISTORY_PAGE_SIZE = 5;
@@ -255,21 +277,17 @@ export default function DriverView({
   const handleExportExcel = async () => {
     setIsExporting(true);
     try {
-      const today = todayVN();
-      const nowHourVN = Number(
-        new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(new Date())
-      );
-      const exportDate =
-        exportShift === 'day' ? today : nowHourVN >= 19 ? today : addDaysToDateStr(today, -1);
+      // Xuất đúng ca đang xem ở "Sản lượng của tôi" - file Excel luôn khớp danh sách trên màn hình.
+      const exportDate = listShiftDate;
 
       const jobsForExport = jobs.filter(
-        (job) => job.driverId === currentDriver.id && isJobInShift(job.timestamp, exportDate, exportShift)
+        (job) => job.driverId === currentDriver.id && isJobInShift(job.timestamp, exportDate, listShift)
       );
       const formattedDate = formatDateOnly(exportDate);
       const dotDate = formattedDate.replace(/\//g, '.'); // "DD/MM/YYYY" -> "DD.MM.YYYY" (dùng cho tên file, "/" không hợp lệ trong tên file)
       let subtitle: string;
       let filenamePrefix: string;
-      if (exportShift === 'night') {
+      if (listShift === 'night') {
         const nextDateObj = new Date(`${exportDate}T12:00:00Z`);
         nextDateObj.setUTCDate(nextDateObj.getUTCDate() + 1);
         const formattedNextDate = formatDateOnly(nextDateObj.toISOString());
@@ -432,28 +450,54 @@ export default function DriverView({
             <span>Thống kê ca làm hôm nay</span>
           </h2>
 
-          <div className="grid grid-cols-3 gap-3">
-            <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-center">
-              <span className="block text-[10px] text-emerald-700 uppercase font-bold">Đã nâng</span>
-              <span className="text-xl font-black text-emerald-700 font-mono">
-                {myTodayJobs.filter(j => j.operation === 'nang_khach_hang').length}
-              </span>
-            </div>
-            <div className="bg-blue-50 p-3 rounded-xl border border-blue-200 text-center">
-              <span className="block text-[10px] text-blue-700 uppercase font-bold">Đã hạ</span>
-              <span className="text-xl font-black text-blue-700 font-mono">
-                {myTodayJobs.filter(j => j.operation === 'ha_khach_hang').length}
-              </span>
-            </div>
-            <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-center">
-              <span className="block text-[10px] text-amber-700 uppercase font-bold">Khác</span>
-              <span className="text-xl font-black text-amber-700 font-mono">
-                {myTodayJobs.filter(j => !['nang_khach_hang', 'ha_khach_hang'].includes(j.operation)).length}
-              </span>
-            </div>
+          {/* Số cont của từng ca, tính theo đúng quy ước ca của báo cáo Excel:
+              ca ngày 07:00-19:00 hôm nay, ca đêm 19:00-07:00 (ca đang chạy hoặc ca vừa kết thúc sáng nay). */}
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { key: 'day' as const, label: 'Ca ngày', range: '07:00 - 19:00', icon: <Sun className="w-3.5 h-3.5" />,
+                jobs: dayShiftJobs, stats: dayShiftStats,
+                card: 'bg-amber-50 border-amber-200', text: 'text-amber-700', ring: 'ring-2 ring-amber-400' },
+              { key: 'night' as const, label: 'Ca đêm', range: '19:00 - 07:00', icon: <Moon className="w-3.5 h-3.5" />,
+                jobs: nightShiftJobs, stats: nightShiftStats,
+                card: 'bg-indigo-50 border-indigo-200', text: 'text-indigo-700', ring: 'ring-2 ring-indigo-400' },
+            ]).map((shift) => (
+              <div
+                key={shift.key}
+                className={`p-3 rounded-xl border ${shift.card} ${currentShift === shift.key ? shift.ring : ''} space-y-1.5`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className={`flex items-center gap-1 text-[11px] uppercase font-black ${shift.text}`}>
+                    {shift.icon}
+                    {shift.label}
+                  </span>
+                  {currentShift === shift.key && (
+                    <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-white/70 ${shift.text}`}>
+                      Đang chạy
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-baseline gap-1">
+                  <span className={`text-2xl font-black font-mono ${shift.text}`}>{shift.jobs.length}</span>
+                  <span className="text-[10px] font-bold text-slate-500">cont</span>
+                </div>
+                <p className="text-[9px] font-mono text-slate-500">{shift.range}</p>
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white border border-emerald-200 text-emerald-700">
+                    Nâng {shift.stats.lifted}
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white border border-blue-200 text-blue-700">
+                    Hạ {shift.stats.lowered}
+                  </span>
+                  <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600">
+                    Khác {shift.stats.other}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
           <div className="mt-3 text-xs text-slate-600 text-center bg-slate-50 border border-slate-200 py-1.5 rounded-lg">
-            Tổng cộng đã hoàn thành: <span className="font-bold text-slate-900 font-mono">{myTodayJobs.length}</span> container
+            Tổng cộng đã hoàn thành:{' '}
+            <span className="font-bold text-slate-900 font-mono">{dayShiftJobs.length + nightShiftJobs.length}</span> container
           </div>
         </div>
         )}
@@ -828,46 +872,6 @@ export default function DriverView({
 
         {driverTab === 'list' && (
         <>
-        {/* Xuất báo cáo ca - chọn ca, ngày tự suy ra theo thời điểm hiện tại (xem handleExportExcel),
-            xuất đúng mẫu Excel công ty (chỉ dữ liệu của tôi) */}
-        <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-3">
-          <h3 className="text-sm font-bold text-slate-900 flex items-center space-x-2">
-            <Download className="w-4.5 h-4.5" style={{ color: 'var(--theme-primary)' }} />
-            <span>Xuất Báo Cáo Ca (Excel)</span>
-          </h3>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex items-center bg-slate-100 border border-slate-300 rounded-lg p-1">
-              <button
-                type="button"
-                onClick={() => setExportShift('day')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                  exportShift === 'day' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                Ca ngày (7h-19h)
-              </button>
-              <button
-                type="button"
-                onClick={() => setExportShift('night')}
-                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                  exportShift === 'night' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
-                }`}
-              >
-                Ca đêm (19h-7h)
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={handleExportExcel}
-              disabled={isExporting}
-              className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs px-3.5 py-2 rounded-lg shadow-sm cursor-pointer"
-            >
-              {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              <span>{isExporting ? 'Đang xuất...' : 'Tải Excel'}</span>
-            </button>
-          </div>
-        </div>
-
         {/* Driver's History in this Shift */}
         <div className="bg-white rounded-2xl p-5 border border-slate-200 shadow-sm space-y-4">
           <div className="flex justify-between items-center border-b border-slate-200 pb-3">
@@ -880,28 +884,55 @@ export default function DriverView({
             )}
           </div>
 
-          {/* Bộ lọc khoảng ngày - mặc định 3 ngày gần nhất, có thể mở rộng để xem lại lịch sử cũ hơn.
-              Chỉ những lượt trong 3 ngày gần nhất mới được phép sửa/xoá (xem canEdit bên dưới). */}
+          {/* Bộ lọc ca - dùng đúng quy ước ca của báo cáo (ca ngày 7h-19h, ca đêm 19h-7h);
+              nút tải Excel xuất đúng ca đang chọn nên file luôn khớp danh sách bên dưới. */}
           <div className="flex flex-wrap items-center gap-2">
-            <DateRangePicker
-              from={historyFromDate}
-              to={historyToDate}
-              onChange={(newFrom, newTo) => {
-                setHistoryFromDate(newFrom);
-                setHistoryToDate(newTo);
-                setHistoryPage(0);
-              }}
-            />
-            <span className="text-[11px] text-slate-500 flex items-center gap-1">
-              <Info className="w-3 h-3 shrink-0" />
-              <span>Chỉ sửa/xoá được lượt trong 3 ngày gần nhất</span>
-            </span>
+            <div className="flex items-center bg-slate-100 border border-slate-300 rounded-lg p-1">
+              <button
+                type="button"
+                onClick={() => { setListShift('day'); setHistoryPage(0); }}
+                className={`flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                  listShift === 'day' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Sun className="w-3.5 h-3.5" />
+                Ca ngày (7h-19h)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setListShift('night'); setHistoryPage(0); }}
+                className={`flex items-center gap-1 px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                  listShift === 'night' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                <Moon className="w-3.5 h-3.5" />
+                Ca đêm (19h-7h)
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={isExporting || myJobs.length === 0}
+              className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-xs px-3.5 py-2 rounded-lg shadow-sm cursor-pointer"
+            >
+              {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              <span>{isExporting ? 'Đang xuất...' : 'Tải Excel'}</span>
+            </button>
           </div>
+          <p className="text-[11px] text-slate-500 flex items-center gap-1">
+            <Info className="w-3 h-3 shrink-0" />
+            <span>
+              {listShift === 'night'
+                ? `Ca đêm 19:00 ${formatDateOnly(listShiftDate)} - 07:00 ${formatDateOnly(addDaysToDateStr(listShiftDate, 1))}`
+                : `Ca ngày 07:00 ${formatDateOnly(listShiftDate)} - 19:00 ${formatDateOnly(listShiftDate)}`}
+              {' · '}Chỉ sửa/xoá được lượt trong 3 ngày gần nhất
+            </span>
+          </p>
 
           {myJobs.length === 0 ? (
             <div className="text-center py-8 text-slate-500">
               <Truck className="w-10 h-10 mx-auto opacity-25 mb-2" />
-              <p className="text-xs">Không có lượt chấm công nào trong khoảng ngày đã chọn.</p>
+              <p className="text-xs">Không có lượt chấm công nào trong ca đang chọn.</p>
             </div>
           ) : (
             <>
