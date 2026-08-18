@@ -1062,7 +1062,7 @@ export default function AccountantView({
                   <col key={i} className="w-[44px]" />
                 ))}
                 <col className="w-[180px]" />
-                <col className="w-[80px]" />
+                <col className="w-[80px] print-collapse-col" />
               </colgroup>
               <thead>
                 {/* 1st Header Row */}
@@ -1139,9 +1139,9 @@ export default function AccountantView({
                           });
                         })}
 
-                        {/* Notes Column */}
+                        {/* Notes Column - canh trái trên web (dễ đọc ghi chú dài), canh giữa khi in cho đẹp và đồng bộ với các cột khác */}
                         <td
-                          className="text-left px-2 font-sans text-[11px] text-slate-800 whitespace-nowrap truncate max-w-[180px]"
+                          className="text-left print:text-center px-2 font-sans text-[11px] text-slate-800 whitespace-nowrap truncate max-w-[180px]"
                           title={formatJobNotesDisplay(job)}
                         >
                           {formatJobNotesDisplay(job)}

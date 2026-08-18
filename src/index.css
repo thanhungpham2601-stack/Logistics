@@ -107,11 +107,21 @@ select {
     .no-print {
       display: none !important;
     }
-    th, td {
+    /* Viền mặc định 1px bị co mờ khi trình duyệt tự "Fit to printable area" để nhồi vừa bảng
+       nhiều cột vào khổ A4 ngang - tăng nhẹ độ đậm để in ra giấy vẫn rõ nét kẻ ô. */
+    th, td, table, .border-black {
       border-color: black !important;
+      border-width: 1.5px !important;
     }
     tr {
       page-break-inside: avoid;
+    }
+    /* Cột "Thao tác" ẩn bằng no-print (display:none) trên từng ô, nhưng <col> khai báo width
+       trong colgroup không nhận display - nếu không collapse thì bảng vẫn chừa trống 80px cho
+       cột này, đẩy lệch bảng sang trái/để hụt lề phải. visibility:collapse mới thực sự bỏ hẳn
+       cột đó khỏi layout khi in. */
+    .print-collapse-col {
+      visibility: collapse;
     }
   }
 }
