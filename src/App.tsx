@@ -451,7 +451,7 @@ export default function App() {
       />
 
       <Route
-        path="/driver"
+        path="/driver/*"
         element={
           currentAccount && currentAccount.role === 'driver' ? (
             <DriverView

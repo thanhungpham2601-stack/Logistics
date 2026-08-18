@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { DatePicker } from 'antd';
 import dayjs from 'dayjs';
@@ -72,7 +73,14 @@ export default function DriverView({
   onUpdateJob,
   onDeleteJob
 }: DriverViewProps) {
-  const [driverTab, setDriverTab] = useState<'add' | 'list'>('add');
+  // Mỗi tab có URL riêng để có thể bookmark/chia sẻ thẳng: /driver/cham-cong (mặc định, kể cả
+  // đứng ở /driver trần) và /driver/danh-sach-san-luong - giống cách accountant đã tách URL theo tab.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const driverTab: 'add' | 'list' = location.pathname.endsWith('/danh-sach-san-luong') ? 'list' : 'add';
+  const setDriverTab = (tab: 'add' | 'list') => {
+    navigate(tab === 'list' ? '/driver/danh-sach-san-luong' : '/driver/cham-cong');
+  };
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [containerNo, setContainerNo] = useState('');
   const [selectedLine, setSelectedLine] = useState(shippingLines[0] ?? '');
@@ -432,17 +440,42 @@ export default function DriverView({
 
       {/* Main Content */}
       <main className="flex-1 w-full lg:max-w-3xl lg:mx-auto p-4 sm:p-6 space-y-6 pb-24 z-10">
-        {/* Tiêu đề trang - phản ánh mục đang chọn ở menu, giống header trang bên kế toán/admin */}
-        <div className="flex items-center space-x-2">
-          {driverTab === 'add' ? (
-            <Plus className="w-6 h-6 shrink-0" style={{ color: 'var(--theme-primary)' }} />
-          ) : (
+        {/* Tiêu đề trang - chỉ hiện ở Danh Sách Sản Lượng; màn Thêm Sản Lượng bỏ tiêu đề này vì
+            banner tài xế + ca trực ngay bên dưới đã đóng vai trò định hướng màn hình rồi. */}
+        {driverTab === 'list' && (
+          <div className="flex items-center space-x-2">
             <ClipboardList className="w-6 h-6 shrink-0" style={{ color: 'var(--theme-primary)' }} />
-          )}
-          <h1 className="text-lg font-black text-slate-900">
-            {driverTab === 'add' ? 'Thêm Sản Lượng' : 'Danh Sách Sản Lượng'}
-          </h1>
-        </div>
+            <h1 className="text-lg font-black text-slate-900">Danh Sách Sản Lượng</h1>
+          </div>
+        )}
+
+        {/* Banner tài xế + ca đang trực - to, rõ, đặt ngay đầu màn Thêm Sản Lượng để tài xế nhìn
+            phát biết ngay đang chấm công cho ca nào, tránh nhầm ca ngày/đêm khi thao tác vội. */}
+        {driverTab === 'add' && (
+          <div
+            className={`rounded-2xl p-4 border shadow-sm flex items-center justify-between gap-3 ${
+              currentShift === 'day' ? 'bg-amber-50 border-amber-200' : 'bg-indigo-50 border-indigo-200'
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div
+                className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 shadow-md ${
+                  currentShift === 'day' ? 'bg-amber-500' : 'bg-indigo-600'
+                }`}
+              >
+                {currentShift === 'day' ? <Sun className="w-6 h-6 text-white" /> : <Moon className="w-6 h-6 text-white" />}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Đang chấm công</p>
+                <p className="text-lg font-black text-slate-900 leading-tight truncate">{currentDriver.name}</p>
+              </div>
+            </div>
+            <div className={`text-right shrink-0 ${currentShift === 'day' ? 'text-amber-700' : 'text-indigo-700'}`}>
+              <p className="text-xl font-black leading-tight">{currentShift === 'day' ? 'CA NGÀY' : 'CA ĐÊM'}</p>
+              <p className="text-[11px] font-bold font-mono text-slate-500">{currentShift === 'day' ? '07:00 - 19:00' : '19:00 - 07:00'}</p>
+            </div>
+          </div>
+        )}
 
         {/* Driver Dashboard Stats card - chỉ hiện ở màn Danh Sách Sản Lượng, không hiện ở màn Thêm Sản Lượng */}
         {driverTab === 'list' && (
