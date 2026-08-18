@@ -1033,7 +1033,7 @@ export default function AccountantView({
       <>
       {/* 3. The Report View (Matching the requested template) */}
       <div className="flex-1 p-6 overflow-auto">
-        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs min-w-[1200px] print:border-none print:shadow-none print:p-0 print:min-w-0 print:w-full">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs print:border-none print:shadow-none print:p-0 print:w-full">
           
           {/* Paper Title Header */}
           <div className="text-center mb-6 space-y-1">
