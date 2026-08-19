@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
 import { ContainerSizeRow, ContainerTypeRow, DaoChuyenNoteRow, EquipmentTypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInShift, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob, stripDiacritics, getAutoShift, todayVN, addDaysToDateStr } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInShift, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob, stripDiacritics, getAutoShift, getShiftUtcRange, todayVN, addDaysToDateStr } from '../utils';
+import { fetchJobs } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
 
 interface DriverViewProps {
@@ -287,12 +288,14 @@ export default function DriverView({
   const handleExportExcel = async () => {
     setIsExporting(true);
     try {
-      // Xuất đúng ca đang xem ở "Sản lượng của tôi" - file Excel luôn khớp danh sách trên màn hình.
+      // Xuất đúng ca đang xem ở "Sản lượng của tôi". Tải mới đúng khoảng giờ của ca đó ngay trước
+      // khi xuất (không phải cả lịch sử) - "jobs" trong bộ nhớ chỉ được vá cục bộ theo thao tác của
+      // chính phiên này, có thể chưa thấy lượt do kế toán/admin thêm hộ, hoặc do chính tài xế này
+      // chấm công từ 1 thiết bị khác.
       const exportDate = listShiftDate;
 
-      const jobsForExport = jobs.filter(
-        (job) => job.driverId === currentDriver.id && isJobInShift(job.timestamp, exportDate, listShift)
-      );
+      const freshJobs = await fetchJobs(getShiftUtcRange(exportDate, listShift));
+      const jobsForExport = freshJobs.filter((job) => job.driverId === currentDriver.id);
       const formattedDate = formatDateOnly(exportDate);
       const dotDate = formattedDate.replace(/\//g, '.'); // "DD/MM/YYYY" -> "DD.MM.YYYY" (dùng cho tên file, "/" không hợp lệ trong tên file)
       let subtitle: string;

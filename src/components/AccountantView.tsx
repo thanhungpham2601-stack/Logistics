@@ -16,7 +16,7 @@ import {
 import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
 import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN, getAutoShift, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob } from '../utils';
 import { ContainerSizeRow, OperationRateRow, OperationTypeRow, ReconciliationReportType, ReportReconciliationRow } from '../lib/supabaseTypes';
-import { Account, ConfigLists, fetchJobsPage, fetchReconciliations, upsertReconciliation } from '../lib/api';
+import { Account, ConfigLists, fetchJobs, fetchJobsPage, fetchReconciliations, upsertReconciliation } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
 import { SummaryColumnBlock, SummaryRowGroup } from '../lib/reportMatrix';
 import AccountingReportPanel from './AccountingReportPanel';
@@ -31,7 +31,7 @@ import { ThemeName, getStoredTheme } from '../lib/theme';
 
 interface AccountantViewProps {
   jobs: JobEntry[];
-  onRefreshJobs: () => Promise<void>;
+  onRefreshJobs: () => Promise<JobEntry[]>;
   drivers: Driver[];
   rates: OperationRateRow[];
   shippingLines: string[];
@@ -239,32 +239,36 @@ export default function AccountantView({
     return () => clearTimeout(timer);
   }, [formErrorWarning]);
 
-  // Apply filters
-  const filteredJobs = jobs
-    .filter(job => {
-      // 1. Filter by Driver
-      if (filterDriver !== 'all' && job.driverId !== filterDriver) return false;
-      
-      // 2. Filter by Date: either a from-to range, or single-day shift
-      if (isRangeMode) {
-        if (!isJobInDateRange(job.timestamp, filterDate, filterToDate)) return false;
-      } else {
-        if (!isJobInShift(job.timestamp, filterDate, filterShift)) return false;
-      }
-      
-      // 3. Filter by Search Query (container no, line, notes) - không phân biệt dấu
-      if (searchQuery) {
-        const query = stripDiacritics(searchQuery);
-        const matchesContainer = stripDiacritics(job.containerNo).includes(query);
-        const matchesLine = stripDiacritics(job.line).includes(query);
-        const matchesNotes = job.notes ? stripDiacritics(job.notes).includes(query) : false;
-        const matchesDriver = stripDiacritics(job.driverName).includes(query);
-        if (!matchesContainer && !matchesLine && !matchesNotes && !matchesDriver) return false;
-      }
-      
-      return true;
-    })
-    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()); // Ascending order like the sheet
+  // Apply filters - tách riêng thành hàm để dùng lại được cho dữ liệu vừa tải mới (vd trước khi
+  // xuất Excel, xem applyFilters(freshJobs) ở handleExportExcel), không chỉ cho "jobs" đang có sẵn.
+  const applyFilters = (list: JobEntry[]) =>
+    list
+      .filter(job => {
+        // 1. Filter by Driver
+        if (filterDriver !== 'all' && job.driverId !== filterDriver) return false;
+
+        // 2. Filter by Date: either a from-to range, or single-day shift
+        if (isRangeMode) {
+          if (!isJobInDateRange(job.timestamp, filterDate, filterToDate)) return false;
+        } else {
+          if (!isJobInShift(job.timestamp, filterDate, filterShift)) return false;
+        }
+
+        // 3. Filter by Search Query (container no, line, notes) - không phân biệt dấu
+        if (searchQuery) {
+          const query = stripDiacritics(searchQuery);
+          const matchesContainer = stripDiacritics(job.containerNo).includes(query);
+          const matchesLine = stripDiacritics(job.line).includes(query);
+          const matchesNotes = job.notes ? stripDiacritics(job.notes).includes(query) : false;
+          const matchesDriver = stripDiacritics(job.driverName).includes(query);
+          if (!matchesContainer && !matchesLine && !matchesNotes && !matchesDriver) return false;
+        }
+
+        return true;
+      })
+      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()); // Ascending order like the sheet
+
+  const filteredJobs = applyFilters(jobs);
 
   // ===================== Phân trang Danh Sách Sản Lượng (20 dòng/trang) =====================
   // Khi KHÔNG có từ khoá tìm kiếm: gọi API tải đúng 1 trang (.range) mỗi khi đổi trang/bộ lọc.
@@ -302,19 +306,19 @@ export default function AccountantView({
     };
   }, [activeTab, searchQuery, isRangeMode, filterDate, filterToDate, filterShift, filterDriver, dashboardPage, jobs]);
 
-  // Bảng danh sách sản lượng ở trên lấy dữ liệu trực tiếp từ Supabase mỗi khi đổi trang/bộ lọc
-  // (luôn mới nhất). Nhưng dòng "Tổng cộng" và các báo cáo tổng hợp khác (Theo tài xế, Nâng/Hạ,
-  // Đảo chuyển...) đều tính từ "jobs" - danh sách dùng chung của cả app, chỉ được làm mới khi
-  // CHÍNH tab này thêm/sửa/xoá 1 lượt (xem refreshJobs() ở App.tsx). Nếu dữ liệu mới được thêm
-  // từ nơi khác (tài xế trên iPad, hoặc 1 tab kế toán khác), "jobs" ở đây bị lệch cho tới khi F5 -
-  // nên mỗi khi đổi trang/bộ lọc ở màn này, chủ động làm mới luôn "jobs" để Tổng cộng/báo cáo tổng
-  // hợp không bị lệch so với bảng chi tiết. Cố tình KHÔNG đưa "jobs" vào dependency (chỉ đổi
-  // trang/bộ lọc mới gọi) để tránh vòng lặp: refresh -> jobs đổi -> effect này chạy lại -> refresh...
+  // Dòng "Tổng cộng" và các báo cáo tổng hợp khác (Theo tài xế, Nâng/Hạ, Đảo chuyển...) đều tính
+  // từ "jobs" - danh sách dùng chung của cả app, được vá thêm/sửa/xoá tại chỗ khi CHÍNH phiên này
+  // thêm/sửa/xoá 1 lượt (xem App.tsx). Nếu dữ liệu mới được thêm từ nơi khác (tài xế trên iPad,
+  // hoặc 1 tab kế toán khác) thì "jobs" ở đây có thể lệch cho tới khi rời rồi quay lại tab này -
+  // nên mỗi lần VÀO tab Danh Sách Sản Lượng, làm mới lại "jobs" 1 lần để bắt kịp thay đổi từ nơi
+  // khác. Cố tình chỉ phụ thuộc "activeTab" (không phải mỗi lần đổi trang/bộ lọc đều gọi lại) -
+  // gọi liên tục sẽ tải TOÀN BỘ lịch sử job_entries mỗi lần, rất tốn băng thông khi dữ liệu tích
+  // luỹ nhiều tháng.
   useEffect(() => {
     if (activeTab !== 'dashboard' || searchQuery) return;
     onRefreshJobs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab, searchQuery, isRangeMode, filterDate, filterToDate, filterShift, filterDriver, dashboardPage]);
+  }, [activeTab]);
 
   const dashboardRows = searchQuery
     ? filteredJobs.slice(dashboardPage * DASHBOARD_PAGE_SIZE, dashboardPage * DASHBOARD_PAGE_SIZE + DASHBOARD_PAGE_SIZE)
@@ -468,8 +472,14 @@ export default function AccountantView({
   const handleExportExcel = async () => {
     setIsExporting(true);
     try {
+      // T\u1EA3i m\u1EDBi \u0111\u00FAng kho\u1EA3ng ng\u00E0y/ca \u0111ang ch\u1ECDn ngay tr\u01B0\u1EDBc khi xu\u1EA5t (kh\u00F4ng ph\u1EA3i c\u1EA3 l\u1ECBch s\u1EED) - file
+      // t\u1EA3i v\u1EC1 ph\u1EA3i lu\u00F4n kh\u1EDBp d\u1EEF li\u1EC7u m\u1EDBi nh\u1EA5t tr\u00EAn server t\u1EA1i th\u1EDDi \u0111i\u1EC3m xu\u1EA5t (b\u00E1o c\u00E1o ch\u00EDnh th\u1EE9c
+      // \u0111\u1EC3 in/k\u00FD), kh\u00F4ng d\u1EF1a v\u00E0o "jobs" c\u00F3 s\u1EB5n trong b\u1ED9 nh\u1EDB v\u1ED1n ch\u1EC9 \u0111\u01B0\u1EE3c v\u00E1 c\u1EE5c b\u1ED9, c\u00F3 th\u1EC3 ch\u01B0a
+      // th\u1EA5y l\u01B0\u1EE3t ch\u1EA5m c\u00F4ng t\u1EEB thi\u1EBFt b\u1ECB kh\u00E1c.
+      const range = isRangeMode ? getDateRangeUtc(filterDate, filterToDate) : getShiftUtcRange(filterDate, filterShift);
+      const freshJobs = await fetchJobs(range);
       await exportShiftReportToExcel({
-        jobs: filteredJobs,
+        jobs: applyFilters(freshJobs),
         sizes,
         operations,
         subtitle: getShiftSubtitle(),

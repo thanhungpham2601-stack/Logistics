@@ -383,24 +383,30 @@ export async function createJob(input: {
   equipment?: string;
   containerType?: string;
   notes?: string;
-}): Promise<void> {
-  const { error } = await supabase.from('job_entries').insert({
-    driver_id: input.driverId,
-    created_by: input.createdBy,
-    performed_at: input.performedAt,
-    shift: input.shift,
-    container_no: input.containerNo,
-    line_code: input.line,
-    size_code: input.size,
-    operation_code: input.operation,
-    cargo_status: input.cargoStatus,
-    sub_type: input.subType ?? null,
-    equipment_code: input.equipment ?? null,
-    container_type_code: input.containerType ?? null,
-    notes: input.notes ?? '',
-  });
+}): Promise<JobEntry> {
+  const { data, error } = await supabase
+    .from('job_entries')
+    .insert({
+      driver_id: input.driverId,
+      created_by: input.createdBy,
+      performed_at: input.performedAt,
+      shift: input.shift,
+      container_no: input.containerNo,
+      line_code: input.line,
+      size_code: input.size,
+      operation_code: input.operation,
+      cargo_status: input.cargoStatus,
+      sub_type: input.subType ?? null,
+      equipment_code: input.equipment ?? null,
+      container_type_code: input.containerType ?? null,
+      notes: input.notes ?? '',
+    })
+    .select('*, profiles!job_entries_driver_id_fkey(full_name)')
+    .single();
 
   if (error) throw error;
+  const row = data as JobEntryRow & { profiles: { full_name: string } | null };
+  return jobRowToEntry(row, row.profiles?.full_name ?? '');
 }
 
 export async function updateJob(
@@ -419,8 +425,8 @@ export async function updateJob(
     containerType: string | null;
     notes: string;
   }>
-): Promise<void> {
-  const { error } = await supabase
+): Promise<JobEntry> {
+  const { data, error } = await supabase
     .from('job_entries')
     .update({
       ...(patch.driverId !== undefined ? { driver_id: patch.driverId } : {}),
@@ -436,9 +442,13 @@ export async function updateJob(
       ...(patch.containerType !== undefined ? { container_type_code: patch.containerType } : {}),
       ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
     })
-    .eq('id', id);
+    .eq('id', id)
+    .select('*, profiles!job_entries_driver_id_fkey(full_name)')
+    .single();
 
   if (error) throw error;
+  const row = data as JobEntryRow & { profiles: { full_name: string } | null };
+  return jobRowToEntry(row, row.profiles?.full_name ?? '');
 }
 
 export async function deleteJob(id: string): Promise<void> {

@@ -184,8 +184,12 @@ export default function App() {
     return () => subscription.subscription.unsubscribe();
   }, [navigate]);
 
-  const refreshJobs = async () => {
-    setJobs(await fetchJobs());
+  // Trả về luôn mảng vừa tải - để chỗ gọi (vd trước khi xuất Excel/in) dùng ngay dữ liệu mới nhất
+  // thay vì đợi qua 1 vòng re-render mới thấy "jobs" cập nhật (setState không đồng bộ).
+  const refreshJobs = async (): Promise<JobEntry[]> => {
+    const fresh = await fetchJobs();
+    setJobs(fresh);
+    return fresh;
   };
 
   const refreshAccounts = async () => {
@@ -226,9 +230,15 @@ export default function App() {
   };
 
   // ===================== Driver job entry =====================
+  // Thêm/sửa/xoá 1 lượt xong thì vá thẳng vào state "jobs" đang có sẵn trong bộ nhớ (thêm/thay/bỏ
+  // đúng 1 dòng) thay vì gọi lại refreshJobs() (tải TOÀN BỘ lịch sử job_entries). Với ~130 lượt/
+  // ngày, gọi full-fetch sau MỖI lượt sẽ tốn băng thông free-tier Supabase rất nhanh khi lịch sử
+  // tích luỹ nhiều tháng - vá state cục bộ vẫn đủ chính xác cho phiên làm việc hiện tại, chỉ có
+  // rủi ro lệch nhẹ nếu THIẾT BỊ KHÁC vừa thêm dữ liệu (đã có refresh riêng khi vào tab Danh Sách
+  // Sản Lượng bên AccountantView để bù lại).
   const handleAddJob = async (payload: Omit<JobEntry, 'id' | 'driverId' | 'driverName'>) => {
     if (!currentAccount) return;
-    await createJob({
+    const created = await createJob({
       driverId: currentAccount.id,
       createdBy: currentAccount.id,
       performedAt: payload.timestamp,
@@ -243,13 +253,13 @@ export default function App() {
       containerType: payload.containerType,
       notes: payload.notes,
     });
-    await refreshJobs();
+    setJobs((prev) => [...prev, created]);
   };
 
   // Accountant/Admin adding a job on behalf of any driver
   const handleAddJobAdmin = async (job: JobEntry) => {
     if (!currentAccount) return;
-    await createJob({
+    const created = await createJob({
       driverId: job.driverId,
       createdBy: currentAccount.id,
       performedAt: job.timestamp,
@@ -264,11 +274,11 @@ export default function App() {
       containerType: job.containerType,
       notes: job.notes,
     });
-    await refreshJobs();
+    setJobs((prev) => [...prev, created]);
   };
 
   const handleUpdateJob = async (job: JobEntry) => {
-    await updateJob(job.id, {
+    const updated = await updateJob(job.id, {
       driverId: job.driverId,
       performedAt: job.timestamp,
       shift: job.shift,
@@ -282,12 +292,12 @@ export default function App() {
       containerType: job.containerType ?? null,
       notes: job.notes,
     });
-    await refreshJobs();
+    setJobs((prev) => prev.map((j) => (j.id === updated.id ? updated : j)));
   };
 
   const handleDeleteJob = async (jobId: string) => {
     await deleteJob(jobId);
-    await refreshJobs();
+    setJobs((prev) => prev.filter((j) => j.id !== jobId));
   };
 
   // ===================== Admin: accounts =====================
