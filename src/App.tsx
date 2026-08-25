@@ -42,6 +42,7 @@ import {
   upsertShippingLine,
 } from './lib/api';
 import { OperationRateRow } from './lib/supabaseTypes';
+import { getDateRangeUtc, todayVN } from './utils';
 
 const CURRENT_ACCOUNT_KEY = 'icd_current_account_id';
 // Cờ bền (sống qua cả việc đóng/mở lại trình duyệt) đánh dấu "người dùng vừa chủ động đăng
@@ -74,15 +75,13 @@ export default function App() {
   const navigate = useNavigate();
 
   const loadAll = async () => {
-    const [accountsData, jobsData, configData, ratesData] = await Promise.all([
+    const [accountsData, configData, ratesData] = await Promise.all([
       fetchAccounts(),
-      fetchJobs(),
       fetchConfigLists(),
       fetchOperationRates(),
     ]);
     setAccounts(accountsData);
     setDrivers(accountsData.filter((a) => a.role === 'driver' && a.isActive).map((a) => ({ id: a.id, name: a.fullName, phone: a.phone, licenseNumber: a.licenseNumber })));
-    setJobs(jobsData);
     setConfigLists(configData);
     setRates(ratesData);
     // Kế toán/Admin: KHÔNG tin localStorage cho phiên đăng nhập - phiên chỉ hợp lệ khi Supabase
@@ -90,13 +89,25 @@ export default function App() {
     // Tài xế: đăng nhập bằng mã PIN, không có session Supabase Auth thật để tự xác nhận lại - nên
     // CÓ khôi phục từ localStorage (chỉ áp dụng cho role driver) để không bắt nhập lại PIN mỗi khi
     // tải lại trang, miễn là chưa bấm "Đăng xuất" (EXPLICIT_LOGOUT_KEY).
+    let restoredDriver: Account | null = null;
     if (localStorage.getItem(EXPLICIT_LOGOUT_KEY) !== '1') {
       const savedId = localStorage.getItem(CURRENT_ACCOUNT_KEY);
       if (savedId) {
         const restored = accountsData.find((a) => a.id === savedId && a.role === 'driver' && a.isActive);
-        if (restored) setCurrentAccount(restored);
+        if (restored) {
+          setCurrentAccount(restored);
+          restoredDriver = restored;
+        }
       }
     }
+    // Tài xế cần thấy toàn bộ lịch sử chấm công CỦA RIÊNG MÌNH (để xem/sửa lượt cũ) - nhưng chỉ
+    // của 1 tài xế nên vẫn nhẹ. Kế toán/Admin thì mặc định chỉ tải đúng HÔM NAY - tải cả lịch sử
+    // job_entries của toàn hệ thống mỗi lần vào trang rất tốn băng thông khi dữ liệu tích luỹ
+    // nhiều tháng; mỗi báo cáo tổng hợp bên AccountantView tự tải đúng khoảng ngày/ca đang xem.
+    const jobsData = restoredDriver
+      ? await fetchJobs({ driverId: restoredDriver.id })
+      : await fetchJobs(getDateRangeUtc(todayVN(), todayVN()));
+    setJobs(jobsData);
   };
 
   useEffect(() => {
@@ -184,14 +195,6 @@ export default function App() {
     return () => subscription.subscription.unsubscribe();
   }, [navigate]);
 
-  // Trả về luôn mảng vừa tải - để chỗ gọi (vd trước khi xuất Excel/in) dùng ngay dữ liệu mới nhất
-  // thay vì đợi qua 1 vòng re-render mới thấy "jobs" cập nhật (setState không đồng bộ).
-  const refreshJobs = async (): Promise<JobEntry[]> => {
-    const fresh = await fetchJobs();
-    setJobs(fresh);
-    return fresh;
-  };
-
   const refreshAccounts = async () => {
     const accountsData = await fetchAccounts();
     setAccounts(accountsData);
@@ -207,6 +210,9 @@ export default function App() {
   const handleDriverPinLogin = (account: Account) => {
     setCurrentAccount(account);
     localStorage.setItem(CURRENT_ACCOUNT_KEY, account.id);
+    // "jobs" ở App có thể đang chỉ chứa dữ liệu hôm nay (mặc định phía kế toán/admin) - tải lại
+    // đúng toàn bộ lịch sử CỦA RIÊNG tài xế này để màn hình chấm công/lịch sử của họ đủ dữ liệu.
+    fetchJobs({ driverId: account.id }).then(setJobs);
     navigate('/driver', { replace: true });
   };
 
@@ -491,7 +497,6 @@ export default function App() {
           currentAccount && currentAccount.role !== 'driver' ? (
             <AccountantView
               jobs={jobs}
-              onRefreshJobs={refreshJobs}
               drivers={drivers}
               rates={rates}
               shippingLines={configLists.lines.filter((l) => l.is_active).map((l) => l.code)}

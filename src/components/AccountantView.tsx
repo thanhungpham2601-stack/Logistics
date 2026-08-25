@@ -14,7 +14,7 @@ import {
   LayoutDashboard, Database, AlertTriangle
 } from 'lucide-react';
 import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
-import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, todayVN, getAutoShift, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, getShiftDateStr, todayVN, getAutoShift, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob } from '../utils';
 import { ContainerSizeRow, OperationRateRow, OperationTypeRow, ReconciliationReportType, ReportReconciliationRow } from '../lib/supabaseTypes';
 import { Account, ConfigLists, fetchJobs, fetchJobsPage, fetchReconciliations, upsertReconciliation } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
@@ -31,7 +31,6 @@ import { ThemeName, getStoredTheme } from '../lib/theme';
 
 interface AccountantViewProps {
   jobs: JobEntry[];
-  onRefreshJobs: () => Promise<JobEntry[]>;
   drivers: Driver[];
   rates: OperationRateRow[];
   shippingLines: string[];
@@ -71,7 +70,6 @@ interface AccountantViewProps {
 
 export default function AccountantView({
   jobs,
-  onRefreshJobs,
   drivers,
   rates,
   shippingLines,
@@ -268,7 +266,41 @@ export default function AccountantView({
       })
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()); // Ascending order like the sheet
 
-  const filteredJobs = applyFilters(jobs);
+  // Khoảng UTC tương ứng với bộ lọc ngày/ca đang chọn của tab hiện tại - dùng để tải đúng dữ liệu
+  // cần thiết trực tiếp từ Supabase (xem "scopedJobs" bên dưới) thay vì lọc lại 1 mảng khổng lồ.
+  const activeRange = isRangeMode ? getDateRangeUtc(filterDate, filterToDate) : getShiftUtcRange(filterDate, filterShift);
+
+  // ===================== Dữ liệu cho các báo cáo tổng hợp =====================
+  // Dòng "Tổng cộng" và các báo cáo tổng hợp (Danh Sách Sản Lượng, Kế Toán, Theo Tài Xế, Nâng/Hạ,
+  // Đảo Chuyển) đều tính từ "scopedJobs" - tải TRỰC TIẾP từ Supabase đúng khoảng ngày/ca + tài xế
+  // đang chọn, mỗi khi đổi bộ lọc hoặc chuyển vào 1 trong các tab này. KHÔNG dựa vào "jobs" (mảng
+  // dùng chung của cả app, giờ mặc định chỉ giữ dữ liệu hôm nay) - nhờ vậy vừa tránh phải tải cả
+  // lịch sử job_entries, vừa luôn thấy ngay lượt chấm công mới nhất (kể cả từ tài xế/thiết bị khác)
+  // mỗi lần xem lại 1 báo cáo, mà không cần polling/nền chạy liên tục.
+  const REPORT_TABS: readonly AccountantTab[] = ['dashboard', 'report', 'driver', 'nang_ha', 'dao_chuyen'];
+  const [scopedJobs, setScopedJobs] = useState<JobEntry[]>([]);
+  const [scopedLoading, setScopedLoading] = useState(false);
+
+  useEffect(() => {
+    if (!REPORT_TABS.includes(activeTab)) return;
+    let cancelled = false;
+    setScopedLoading(true);
+    fetchJobs({ from: activeRange.from, to: activeRange.to, driverId: filterDriver !== 'all' ? filterDriver : undefined })
+      .then((data) => {
+        if (!cancelled) setScopedJobs(data);
+      })
+      .finally(() => {
+        if (!cancelled) setScopedLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // "jobs" nằm trong deps để làm mới ngay sau khi CHÍNH phiên này thêm/sửa/xoá 1 lượt (App.tsx vá
+    // "jobs" cục bộ ngay khi đó), không cần đợi đổi tab/bộ lọc mới thấy cập nhật.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, activeRange.from, activeRange.to, filterDriver, jobs]);
+
+  const filteredJobs = applyFilters(scopedJobs);
 
   // ===================== Phân trang Danh Sách Sản Lượng (20 dòng/trang) =====================
   // Khi KHÔNG có từ khoá tìm kiếm: gọi API tải đúng 1 trang (.range) mỗi khi đổi trang/bộ lọc.
@@ -289,8 +321,7 @@ export default function AccountantView({
     if (activeTab !== 'dashboard' || searchQuery) return;
     let cancelled = false;
     setPagedLoading(true);
-    const range = isRangeMode ? getDateRangeUtc(filterDate, filterToDate) : getShiftUtcRange(filterDate, filterShift);
-    fetchJobsPage({ from: range.from, to: range.to, driverId: filterDriver, page: dashboardPage, pageSize: DASHBOARD_PAGE_SIZE })
+    fetchJobsPage({ from: activeRange.from, to: activeRange.to, driverId: filterDriver, page: dashboardPage, pageSize: DASHBOARD_PAGE_SIZE })
       .then((res) => {
         if (cancelled) return;
         setPagedJobs(res.jobs);
@@ -305,20 +336,6 @@ export default function AccountantView({
       cancelled = true;
     };
   }, [activeTab, searchQuery, isRangeMode, filterDate, filterToDate, filterShift, filterDriver, dashboardPage, jobs]);
-
-  // Dòng "Tổng cộng" và các báo cáo tổng hợp khác (Theo tài xế, Nâng/Hạ, Đảo chuyển...) đều tính
-  // từ "jobs" - danh sách dùng chung của cả app, được vá thêm/sửa/xoá tại chỗ khi CHÍNH phiên này
-  // thêm/sửa/xoá 1 lượt (xem App.tsx). Nếu dữ liệu mới được thêm từ nơi khác (tài xế trên iPad,
-  // hoặc 1 tab kế toán khác) thì "jobs" ở đây có thể lệch cho tới khi rời rồi quay lại tab này -
-  // nên mỗi lần VÀO tab Danh Sách Sản Lượng, làm mới lại "jobs" 1 lần để bắt kịp thay đổi từ nơi
-  // khác. Cố tình chỉ phụ thuộc "activeTab" (không phải mỗi lần đổi trang/bộ lọc đều gọi lại) -
-  // gọi liên tục sẽ tải TOÀN BỘ lịch sử job_entries mỗi lần, rất tốn băng thông khi dữ liệu tích
-  // luỹ nhiều tháng.
-  useEffect(() => {
-    if (activeTab !== 'dashboard' || searchQuery) return;
-    onRefreshJobs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
 
   const dashboardRows = searchQuery
     ? filteredJobs.slice(dashboardPage * DASHBOARD_PAGE_SIZE, dashboardPage * DASHBOARD_PAGE_SIZE + DASHBOARD_PAGE_SIZE)
@@ -408,24 +425,28 @@ export default function AccountantView({
       notes: formOperation === 'dao_chuyen' ? (selectedDaoChuyenNote?.label ?? '') : formNotes.trim()
     };
 
-    // Chặn trùng lượt: cùng tài xế + cùng ca + cùng container + cùng tác nghiệp. Khác ca thì
-    // không tính trùng.
-    const duplicate = findDuplicateJob(
-      jobs,
-      { driverId: jobData.driverId, containerNo: jobData.containerNo, operation: jobData.operation, timestamp: jobData.timestamp, shift: jobData.shift },
-      isEditing ? editingJobId ?? undefined : undefined
-    );
-    if (duplicate) {
-      const opLabel = operations.find((o) => o.code === jobData.operation)?.label ?? jobData.operation;
-      setFormErrorWarning(
-        `Đã có 1 lượt "${opLabel}" cho container ${jobData.containerNo} của ${jobData.driverName} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}) - không thể lưu trùng.`
-      );
-      return;
-    }
-    setFormErrorWarning(null);
-
     setIsSavingJob(true);
     try {
+      // Chặn trùng lượt: cùng tài xế + cùng ca + cùng container + cùng tác nghiệp. Khác ca thì
+      // không tính trùng. Tải lại đúng ca của lượt đang lưu trực tiếp từ server để kiểm tra - "jobs"
+      // trong bộ nhớ giờ chỉ còn giữ đúng khoảng ngày/ca đang xem trên báo cáo, có thể không phải
+      // đúng ca của lượt đang thêm/sửa (vd form mặc định giờ hiện tại nhưng đang xem báo cáo ngày khác).
+      const dupRange = getShiftUtcRange(getShiftDateStr(jobData.timestamp), jobData.shift);
+      const recentJobs = await fetchJobs(dupRange);
+      const duplicate = findDuplicateJob(
+        recentJobs,
+        { driverId: jobData.driverId, containerNo: jobData.containerNo, operation: jobData.operation, timestamp: jobData.timestamp, shift: jobData.shift },
+        isEditing ? editingJobId ?? undefined : undefined
+      );
+      if (duplicate) {
+        const opLabel = operations.find((o) => o.code === jobData.operation)?.label ?? jobData.operation;
+        setFormErrorWarning(
+          `Đã có 1 lượt "${opLabel}" cho container ${jobData.containerNo} của ${jobData.driverName} trong ca này (lúc ${formatDateTime(duplicate.timestamp)}) - không thể lưu trùng.`
+        );
+        return;
+      }
+      setFormErrorWarning(null);
+
       if (isEditing) {
         await onUpdateJob(jobData);
       } else {
@@ -476,8 +497,7 @@ export default function AccountantView({
       // t\u1EA3i v\u1EC1 ph\u1EA3i lu\u00F4n kh\u1EDBp d\u1EEF li\u1EC7u m\u1EDBi nh\u1EA5t tr\u00EAn server t\u1EA1i th\u1EDDi \u0111i\u1EC3m xu\u1EA5t (b\u00E1o c\u00E1o ch\u00EDnh th\u1EE9c
       // \u0111\u1EC3 in/k\u00FD), kh\u00F4ng d\u1EF1a v\u00E0o "jobs" c\u00F3 s\u1EB5n trong b\u1ED9 nh\u1EDB v\u1ED1n ch\u1EC9 \u0111\u01B0\u1EE3c v\u00E1 c\u1EE5c b\u1ED9, c\u00F3 th\u1EC3 ch\u01B0a
       // th\u1EA5y l\u01B0\u1EE3t ch\u1EA5m c\u00F4ng t\u1EEB thi\u1EBFt b\u1ECB kh\u00E1c.
-      const range = isRangeMode ? getDateRangeUtc(filterDate, filterToDate) : getShiftUtcRange(filterDate, filterShift);
-      const freshJobs = await fetchJobs(range);
+      const freshJobs = await fetchJobs(activeRange);
       await exportShiftReportToExcel({
         jobs: applyFilters(freshJobs),
         sizes,
@@ -996,7 +1016,9 @@ export default function AccountantView({
           onDeleteNotePreset={onDeleteNotePreset}
         />
       ) : activeTab === 'overview' ? (
-        <DashboardOverview jobs={jobs} drivers={drivers} sizes={sizes} operations={operations} />
+        <DashboardOverview drivers={drivers} sizes={sizes} operations={operations} />
+      ) : scopedLoading && scopedJobs.length === 0 ? (
+        <ReportLoadingPlaceholder />
       ) : activeTab === 'report' ? (
         <AccountingReportPanel jobs={filteredJobs} rates={rates} subtitle={getShiftSubtitle()} />
       ) : activeTab === 'driver' ? (
@@ -1490,6 +1512,15 @@ export default function AccountantView({
       )}
 
       </div> {/* Close Main Content Workspace Area */}
+    </div>
+  );
+}
+
+function ReportLoadingPlaceholder() {
+  return (
+    <div className="flex-1 flex items-center justify-center p-12 text-slate-400">
+      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+      <span className="text-sm font-bold">Đang tải dữ liệu...</span>
     </div>
   );
 }

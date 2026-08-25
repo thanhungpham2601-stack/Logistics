@@ -314,12 +314,12 @@ export async function fetchOperationRates(): Promise<OperationRateRow[]> {
 
 // ===================== JOB ENTRIES =====================
 
-export async function fetchJobs(range?: { from: string; to: string }): Promise<JobEntry[]> {
+export async function fetchJobs(params?: { from?: string; to?: string; driverId?: string }): Promise<JobEntry[]> {
   let query = supabase.from('job_entries').select('*, profiles!job_entries_driver_id_fkey(full_name)');
 
-  if (range) {
-    query = query.gte('performed_at', range.from).lt('performed_at', range.to);
-  }
+  if (params?.from) query = query.gte('performed_at', params.from);
+  if (params?.to) query = query.lt('performed_at', params.to);
+  if (params?.driverId) query = query.eq('driver_id', params.driverId);
 
   const { data, error } = await query.order('performed_at', { ascending: true });
   if (error) throw error;

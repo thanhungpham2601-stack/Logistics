@@ -1,16 +1,16 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell,
 } from 'recharts';
-import { TrendingUp, TrendingDown, Minus, Users, Ship, Activity, Sun, Moon, Package, PackageOpen } from 'lucide-react';
+import { TrendingUp, TrendingDown, Minus, Users, Ship, Activity, Sun, Moon, Package, PackageOpen, Loader2 } from 'lucide-react';
 import { JobEntry, Driver } from '../types';
 import { ContainerSizeRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { isJobInDateRange, todayVN, addDaysToDateStr, daysBetweenDateStr, toVNDateStr, formatDateOnly } from '../utils';
+import { todayVN, addDaysToDateStr, daysBetweenDateStr, toVNDateStr, formatDateOnly, getDateRangeUtc } from '../utils';
+import { fetchJobs } from '../lib/api';
 import DateRangePicker from './DateRangePicker';
 
 interface DashboardOverviewProps {
-  jobs: JobEntry[];
   drivers: Driver[];
   sizes: ContainerSizeRow[];
   operations: OperationTypeRow[];
@@ -76,20 +76,40 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle?: st
   );
 }
 
-export default function DashboardOverview({ jobs, drivers, sizes, operations }: DashboardOverviewProps) {
+export default function DashboardOverview({ drivers, sizes, operations }: DashboardOverviewProps) {
   const today = todayVN();
-  const [from, setFrom] = useState(addDaysToDateStr(today, -29));
+  // Mặc định chỉ xem đúng hôm nay - không tự tải cả tháng dữ liệu ngay khi vào trang. Muốn xem xu
+  // hướng nhiều ngày hơn thì tự mở rộng khoảng ngày ở bộ chọn bên dưới, lúc đó mới tải thêm.
+  const [from, setFrom] = useState(today);
   const [to, setTo] = useState(today);
 
   const daysInRange = daysBetweenDateStr(from, to);
   const prevTo = addDaysToDateStr(from, -1);
   const prevFrom = addDaysToDateStr(prevTo, -(daysInRange - 1));
 
-  const periodJobs = useMemo(() => jobs.filter((j) => isJobInDateRange(j.timestamp, from, to)), [jobs, from, to]);
-  const prevPeriodJobs = useMemo(
-    () => jobs.filter((j) => isJobInDateRange(j.timestamp, prevFrom, prevTo)),
-    [jobs, prevFrom, prevTo]
-  );
+  // Tải trực tiếp từ Supabase đúng khoảng ngày đang chọn (và kỳ liền trước để so sánh) mỗi khi đổi
+  // khoảng ngày - không giữ toàn bộ lịch sử job_entries trong bộ nhớ, và luôn thấy ngay lượt chấm
+  // công mới nhất (kể cả từ tài xế/thiết bị khác) mỗi lần mở lại tab này.
+  const [periodJobs, setPeriodJobs] = useState<JobEntry[]>([]);
+  const [prevPeriodJobs, setPrevPeriodJobs] = useState<JobEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([fetchJobs(getDateRangeUtc(from, to)), fetchJobs(getDateRangeUtc(prevFrom, prevTo))])
+      .then(([curr, prev]) => {
+        if (cancelled) return;
+        setPeriodJobs(curr);
+        setPrevPeriodJobs(prev);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [from, to, prevFrom, prevTo]);
 
   const pctChange = (curr: number, prev: number): number | null => {
     if (prev === 0) return curr > 0 ? 100 : null;
@@ -187,7 +207,12 @@ export default function DashboardOverview({ jobs, drivers, sizes, operations }: 
         </span>
       </div>
 
-      {totalCount === 0 && prevCount === 0 ? (
+      {loading && periodJobs.length === 0 && prevPeriodJobs.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400">
+          <Loader2 className="w-8 h-8 mx-auto animate-spin mb-2" />
+          <p className="text-sm font-bold">Đang tải dữ liệu...</p>
+        </div>
+      ) : totalCount === 0 && prevCount === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center text-slate-400">
           <Activity className="w-10 h-10 mx-auto opacity-30 mb-2" />
           <p className="text-sm font-bold">Không có dữ liệu sản lượng trong khoảng thời gian này.</p>
