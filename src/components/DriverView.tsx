@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
 import { ContainerSizeRow, ContainerTypeRow, DaoChuyenNoteRow, EquipmentTypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInShift, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob, stripDiacritics, getAutoShift, getShiftUtcRange, todayVN, addDaysToDateStr } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInLastNDays, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob, stripDiacritics, getAutoShift, getShiftDateStr, getShiftUtcRange, todayVN, addDaysToDateStr } from '../utils';
 import { fetchJobs } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
 
@@ -147,7 +147,7 @@ export default function DriverView({
 
   // Ngày báo cáo của một ca, suy ra từ thời điểm hiện tại - dùng chung cho bộ lọc ca ở
   // "Sản lượng của tôi", phần thống kê ca hôm nay và file Excel xuất ra, để 3 chỗ luôn khớp số liệu.
-  // Quy ước (giống isJobInShift): "ca đêm ngày X" bắt đầu 19:00 ngày X, kết thúc 07:00 ngày X+1.
+  // Quy ước: "ca đêm ngày X" bắt đầu 19:00 ngày X, kết thúc 07:00 ngày X+1.
   const nowHourVN = Number(
     new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(currentTime)
   );
@@ -159,16 +159,21 @@ export default function DriverView({
 
   const listShiftDate = shiftDateFor(listShift);
 
+  // `shift` được chốt khi lưu lượt, nên dùng cùng ngày-ca chuẩn hoá để lọc. Không suy ra lại
+  // bằng mốc thời gian trên trình duyệt, tránh làm sót lượt hợp lệ do cách parse timezone khác nhau.
+  const isJobInSelectedShift = (job: JobEntry, shiftDate: string, shift: Shift) =>
+    job.shift === shift && getShiftDateStr(job.timestamp) === shiftDate;
+
   // Filter jobs submitted by THIS driver, theo đúng ca đang chọn
   const myJobs = jobs
-    .filter(job => job.driverId === currentDriver.id && isJobInShift(job.timestamp, listShiftDate, listShift))
+    .filter(job => job.driverId === currentDriver.id && isJobInSelectedShift(job, listShiftDate, listShift))
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
   // Thống kê ca hôm nay - tách riêng ca ngày và ca đêm theo đúng quy ước ca của báo cáo,
   // không phụ thuộc ca đang chọn ở danh sách bên dưới.
   const myJobsAll = jobs.filter(j => j.driverId === currentDriver.id);
-  const dayShiftJobs = myJobsAll.filter(j => isJobInShift(j.timestamp, shiftDateFor('day'), 'day'));
-  const nightShiftJobs = myJobsAll.filter(j => isJobInShift(j.timestamp, shiftDateFor('night'), 'night'));
+  const dayShiftJobs = myJobsAll.filter(j => isJobInSelectedShift(j, shiftDateFor('day'), 'day'));
+  const nightShiftJobs = myJobsAll.filter(j => isJobInSelectedShift(j, shiftDateFor('night'), 'night'));
   const countByOperation = (list: JobEntry[]) => ({
     lifted: list.filter(j => j.operation === 'nang_khach_hang').length,
     lowered: list.filter(j => j.operation === 'ha_khach_hang').length,
