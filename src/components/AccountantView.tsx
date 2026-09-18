@@ -435,7 +435,7 @@ export default function AccountantView({
       const recentJobs = await fetchJobs(dupRange);
       const duplicate = findDuplicateJob(
         recentJobs,
-        { driverId: jobData.driverId, containerNo: jobData.containerNo, operation: jobData.operation, notes: jobData.notes, timestamp: jobData.timestamp, shift: jobData.shift },
+        { driverId: jobData.driverId, containerNo: jobData.containerNo, operation: jobData.operation, notes: jobData.notes, timestamp: jobData.timestamp },
         isEditing ? editingJobId ?? undefined : undefined
       );
       if (duplicate) {

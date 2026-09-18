@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { DatePicker } from 'antd';
@@ -30,6 +30,25 @@ interface DriverViewProps {
   onUpdateJob: (job: JobEntry) => Promise<void>;
   onDeleteJob: (jobId: string) => Promise<void>;
   onRefreshJobs: (driverId: string) => Promise<void>;
+}
+
+/**
+ * Đồng hồ chạy từng giây, TÁCH RIÊNG khỏi DriverView. Trước đây DriverView tự giữ state đồng hồ
+ * 1 giây/lần, khiến toàn bộ màn hình (form ~700 dòng JSX + danh sách + các hiệu ứng motion) render
+ * lại mỗi giây - đó là nguồn gây giật/lag khi tài xế đang gõ. Giờ chỉ đúng 2 dòng chữ này re-render.
+ */
+function LiveClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return (
+    <div className="hidden xs:flex flex-col items-end text-right font-mono">
+      <span className="text-xs font-bold text-slate-700">{now.toLocaleTimeString('vi-VN')}</span>
+      <span className="text-[10px] text-slate-500 font-medium">{now.toLocaleDateString('vi-VN')}</span>
+    </div>
+  );
 }
 
 /** Định dạng Date thành chuỗi "YYYY-MM-DDTHH:mm" theo giờ địa phương - dùng cho input datetime-local. */
@@ -117,9 +136,13 @@ export default function DriverView({
 
   const isContainerValid = validateContainerNumber(containerNo);
 
-  // Real-time clock for the driver
+  // Nhịp này KHÔNG phải để hiển thị giờ (đã có <LiveClock/> tự lo), mà chỉ để các mốc phụ thuộc
+  // thời gian tự đúng khi vắt qua ranh giới ca: nhãn ca của form, ngày-ca của bộ lọc, giới hạn 3
+  // ngày của DatePicker. Những thứ đó đổi theo giờ/ngày nên 30 giây/lần là quá đủ, và rẻ hơn 30
+  // lần so với nhịp 1 giây cũ. Riêng thời điểm LƯU lượt thì lấy giờ tươi ngay lúc bấm (xem
+  // handleSubmit), không dùng giá trị trong state để tránh lệch tối đa 30 giây.
   useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    const timer = setInterval(() => setCurrentTime(new Date()), 30_000);
     return () => clearInterval(timer);
   }, []);
 
@@ -162,24 +185,39 @@ export default function DriverView({
   };
 
   const listShiftDate = shiftDateFor(listShift);
+  const dayShiftDate = shiftDateFor('day');
+  const nightShiftDate = shiftDateFor('night');
 
+  // Các danh sách dẫn xuất bên dưới đều được useMemo: chúng quét lại toàn bộ "jobs" và trước đây
+  // chạy lại ở MỌI lần render - kể cả khi tài xế chỉ gõ 1 ký tự vào ô số container.
+  //
   // Lọc theo MỐC THỜI GIAN thực hiện, KHÔNG theo cột `shift` đã lưu: báo cáo/Excel của admin lẫn
   // file Excel ngay bên dưới đều cắt ca bằng khoảng giờ của performed_at. Cột `shift` là dữ liệu
   // rời (có bản ghi cũ tự chọn tay, hoặc ghi từ thiết bị lệch múi giờ) nên có thể mâu thuẫn với
   // giờ thực hiện - lấy nó làm điều kiện lọc sẽ khiến lượt biến mất ở màn tài xế dù admin vẫn thấy.
-  const isJobInSelectedShift = (job: JobEntry, shiftDate: string, shift: Shift) =>
-    isJobInShift(job.timestamp, shiftDate, shift);
+  const myJobsAll = useMemo(
+    () => jobs.filter(j => j.driverId === currentDriver.id),
+    [jobs, currentDriver.id]
+  );
 
   // Filter jobs submitted by THIS driver, theo đúng ca đang chọn
-  const myJobs = jobs
-    .filter(job => job.driverId === currentDriver.id && isJobInSelectedShift(job, listShiftDate, listShift))
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  const myJobs = useMemo(
+    () => myJobsAll
+      .filter(job => isJobInShift(job.timestamp, listShiftDate, listShift))
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()),
+    [myJobsAll, listShiftDate, listShift]
+  );
 
   // Thống kê ca hôm nay - tách riêng ca ngày và ca đêm theo đúng quy ước ca của báo cáo,
   // không phụ thuộc ca đang chọn ở danh sách bên dưới.
-  const myJobsAll = jobs.filter(j => j.driverId === currentDriver.id);
-  const dayShiftJobs = myJobsAll.filter(j => isJobInSelectedShift(j, shiftDateFor('day'), 'day'));
-  const nightShiftJobs = myJobsAll.filter(j => isJobInSelectedShift(j, shiftDateFor('night'), 'night'));
+  const dayShiftJobs = useMemo(
+    () => myJobsAll.filter(j => isJobInShift(j.timestamp, dayShiftDate, 'day')),
+    [myJobsAll, dayShiftDate]
+  );
+  const nightShiftJobs = useMemo(
+    () => myJobsAll.filter(j => isJobInShift(j.timestamp, nightShiftDate, 'night')),
+    [myJobsAll, nightShiftDate]
+  );
   const countByOperation = (list: JobEntry[]) => ({
     lifted: list.filter(j => j.operation === 'nang_khach_hang').length,
     lowered: list.filter(j => j.operation === 'ha_khach_hang').length,
@@ -193,16 +231,15 @@ export default function DriverView({
 
   // Tìm kiếm + phân trang lịch sử của tôi - không phân biệt dấu, giống ô tìm kiếm bên báo cáo.
   const HISTORY_PAGE_SIZE = 20;
-  const filteredMyJobs = historySearch
-    ? myJobs.filter((job) => {
-        const q = stripDiacritics(historySearch);
-        return (
-          stripDiacritics(job.containerNo).includes(q) ||
-          stripDiacritics(job.line).includes(q) ||
-          (job.notes ? stripDiacritics(job.notes).includes(q) : false)
-        );
-      })
-    : myJobs;
+  const filteredMyJobs = useMemo(() => {
+    if (!historySearch) return myJobs;
+    const q = stripDiacritics(historySearch);
+    return myJobs.filter((job) =>
+      stripDiacritics(job.containerNo).includes(q) ||
+      stripDiacritics(job.line).includes(q) ||
+      (job.notes ? stripDiacritics(job.notes).includes(q) : false)
+    );
+  }, [myJobs, historySearch]);
   const historyTotalPages = Math.max(1, Math.ceil(filteredMyJobs.length / HISTORY_PAGE_SIZE));
   const safeHistoryPage = Math.min(historyPage, historyTotalPages - 1);
   const pagedMyJobs = filteredMyJobs.slice(
@@ -228,9 +265,17 @@ export default function DriverView({
       return;
     }
 
+    // Lấy giờ TƯƠI ngay lúc bấm Lưu thay vì dùng "currentTime" trong state (chỉ nhịp 30 giây/lần)
+    // - nếu không, lượt chấm công có thể bị ghi lùi tới 30 giây so với thực tế.
+    const now = new Date();
+    const submitTimestamp = useCurrentTime || !manualTimestamp ? now : new Date(manualTimestamp);
+    const submitShift: Shift = getAutoShift(submitTimestamp);
+    const submitMinAllowed = new Date(now);
+    submitMinAllowed.setDate(submitMinAllowed.getDate() - 3);
+
     // Chốt chặn phòng vệ - input datetime-local đã có min/max nhưng không phải trình duyệt
     // nào cũng ép cứng được, nên kiểm tra lại trước khi lưu.
-    if (isNaN(effectiveTimestamp.getTime()) || effectiveTimestamp > currentTime || effectiveTimestamp < minAllowedTimestamp) {
+    if (isNaN(submitTimestamp.getTime()) || submitTimestamp > now || submitTimestamp < submitMinAllowed) {
       setErrorWarning('Thời điểm thực hiện không hợp lệ - không được chọn tương lai hoặc quá 3 ngày trước.');
       return;
     }
@@ -244,8 +289,7 @@ export default function DriverView({
       containerNo: finalContainerNo,
       operation: selectedOperation,
       notes: selectedOperation === 'dao_chuyen' ? (selectedNote?.label ?? '') : undefined,
-      timestamp: effectiveTimestamp.toISOString(),
-      shift: effectiveShift,
+      timestamp: submitTimestamp.toISOString(),
     });
     if (duplicate) {
       const opLabel = operations.find((o) => o.code === selectedOperation)?.label ?? selectedOperation;
@@ -258,8 +302,8 @@ export default function DriverView({
     setIsSubmitting(true);
     try {
       await onAddJob({
-        timestamp: effectiveTimestamp.toISOString(),
-        shift: effectiveShift,
+        timestamp: submitTimestamp.toISOString(),
+        shift: submitShift,
         containerNo: finalContainerNo,
         line: finalLine,
         size: selectedSize,
@@ -385,14 +429,7 @@ export default function DriverView({
           </div>
         </div>
 
-        <div className="hidden xs:flex flex-col items-end text-right font-mono">
-          <span className="text-xs font-bold text-slate-700">
-            {currentTime.toLocaleTimeString('vi-VN')}
-          </span>
-          <span className="text-[10px] text-slate-500 font-medium">
-            {currentTime.toLocaleDateString('vi-VN')}
-          </span>
-        </div>
+        <LiveClock />
       </header>
 
       {/* Backdrop cho menu di động */}
@@ -994,6 +1031,11 @@ export default function DriverView({
             <div className="text-center py-8 text-slate-500">
               <Truck className="w-10 h-10 mx-auto opacity-25 mb-2" />
               <p className="text-xs">Không có lượt chấm công nào trong ca đang chọn.</p>
+              {myJobsAll.length > 0 && (
+                <p className="text-[11px] mt-1 text-slate-400">
+                  Đã tải {myJobsAll.length} lượt trong 3 ngày gần nhất - thử chuyển sang ca còn lại.
+                </p>
+              )}
             </div>
           ) : (
             <>
@@ -1225,7 +1267,7 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
     const jobNotes = operation === 'dao_chuyen' ? (selectedNote?.label ?? '') : notes.trim();
     const duplicate = findDuplicateJob(
       existingJobs,
-      { driverId: job.driverId, containerNo, operation, notes: jobNotes, timestamp: parsedTimestamp.toISOString(), shift: getAutoShift(parsedTimestamp) },
+      { driverId: job.driverId, containerNo, operation, notes: jobNotes, timestamp: parsedTimestamp.toISOString() },
       job.id
     );
     if (duplicate) {

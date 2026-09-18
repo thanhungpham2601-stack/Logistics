@@ -42,7 +42,7 @@ import {
   upsertShippingLine,
 } from './lib/api';
 import { OperationRateRow } from './lib/supabaseTypes';
-import { getDateRangeUtc, todayVN } from './utils';
+import { addDaysToDateStr, getDateRangeUtc, todayVN } from './utils';
 
 const CURRENT_ACCOUNT_KEY = 'icd_current_account_id';
 // Cờ bền (sống qua cả việc đóng/mở lại trình duyệt) đánh dấu "người dùng vừa chủ động đăng
@@ -54,6 +54,14 @@ const EXPLICIT_LOGOUT_KEY = 'icd_explicit_logout';
 function homePathFor(account: Account): string {
   return account.role === 'driver' ? '/driver' : '/accountant';
 }
+
+// Màn tài xế chỉ hiển thị ca đang chạy và chỉ cho sửa/xoá lượt trong 3 ngày gần nhất, nên chỉ cần
+// tải đúng cửa sổ đó. Tải "toàn bộ lịch sử của 1 tài xế" (không kèm khoảng ngày) là bẫy: PostgREST
+// chặn ở db-max-rows (mặc định 1000) và fetchJobs sắp xếp performed_at TĂNG DẦN, nên khi tài xế
+// tích luỹ đủ 1000 lượt thì phần bị cắt lại chính là những lượt MỚI NHẤT - danh sách trống trơn
+// dù dữ liệu vẫn nằm trong DB và admin vẫn thấy.
+const DRIVER_JOBS_WINDOW_DAYS = 3;
+const driverJobsRange = () => getDateRangeUtc(addDaysToDateStr(todayVN(), -DRIVER_JOBS_WINDOW_DAYS), todayVN());
 
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -100,12 +108,12 @@ export default function App() {
         }
       }
     }
-    // Tài xế cần thấy toàn bộ lịch sử chấm công CỦA RIÊNG MÌNH (để xem/sửa lượt cũ) - nhưng chỉ
-    // của 1 tài xế nên vẫn nhẹ. Kế toán/Admin thì mặc định chỉ tải đúng HÔM NAY - tải cả lịch sử
+    // Tài xế: tải đúng cửa sổ 3 ngày gần nhất của RIÊNG MÌNH (xem ca đang chạy + sửa lượt cũ),
+    // xem DRIVER_JOBS_WINDOW_DAYS. Kế toán/Admin thì mặc định chỉ tải đúng HÔM NAY - tải cả lịch sử
     // job_entries của toàn hệ thống mỗi lần vào trang rất tốn băng thông khi dữ liệu tích luỹ
     // nhiều tháng; mỗi báo cáo tổng hợp bên AccountantView tự tải đúng khoảng ngày/ca đang xem.
     const jobsData = restoredDriver
-      ? await fetchJobs({ driverId: restoredDriver.id })
+      ? await fetchJobs({ driverId: restoredDriver.id, ...driverJobsRange() })
       : await fetchJobs(getDateRangeUtc(todayVN(), todayVN()));
     setJobs(jobsData);
   };
@@ -211,8 +219,8 @@ export default function App() {
     setCurrentAccount(account);
     localStorage.setItem(CURRENT_ACCOUNT_KEY, account.id);
     // "jobs" ở App có thể đang chỉ chứa dữ liệu hôm nay (mặc định phía kế toán/admin) - tải lại
-    // đúng toàn bộ lịch sử CỦA RIÊNG tài xế này để màn hình chấm công/lịch sử của họ đủ dữ liệu.
-    fetchJobs({ driverId: account.id }).then(setJobs);
+    // đúng cửa sổ 3 ngày CỦA RIÊNG tài xế này để màn hình chấm công/lịch sử của họ đủ dữ liệu.
+    fetchJobs({ driverId: account.id, ...driverJobsRange() }).then(setJobs);
     navigate('/driver', { replace: true });
   };
 
@@ -307,7 +315,7 @@ export default function App() {
   };
 
   const refreshDriverJobs = useCallback(async (driverId: string) => {
-    setJobs(await fetchJobs({ driverId }));
+    setJobs(await fetchJobs({ driverId, ...driverJobsRange() }));
   }, []);
 
   // ===================== Admin: accounts =====================

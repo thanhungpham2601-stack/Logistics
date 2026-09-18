@@ -236,31 +236,40 @@ interface DuplicateCheckJob {
   operation: string;
   notes?: string;
   timestamp: string;
-  shift: 'day' | 'night';
+}
+
+/** Hai lượt có thuộc cùng 1 ca hay không - suy hoàn toàn từ thời điểm thực hiện (ngày-ca + loại
+ *  ca ngày/đêm), KHÔNG đọc cột `shift` đã lưu, để quy tắc chặn trùng luôn khớp với cách màn hình
+ *  tài xế, báo cáo admin và file Excel cắt ca. */
+function isSameShiftWindow(aIso: string, bIso: string): boolean {
+  return (
+    getShiftDateStr(aIso) === getShiftDateStr(bIso) &&
+    getAutoShift(new Date(aIso)) === getAutoShift(new Date(bIso))
+  );
 }
 
 /**
  * Tìm lượt chấm công trùng: cùng tài xế + cùng ca (cùng ngày ca VÀ cùng loại ca ngày/đêm) + cùng
  * số container + cùng loại tác nghiệp. Riêng Đảo chuyển, hai lượt có Ghi chú đảo chuyển khác nhau
- * được phép trong cùng ca. Khác ca thì KHÔNG tính trùng dù cùng container/tác nghiệp - vd nâng rồi
- * hạ cùng 1 container ở 2 ca khác nhau vẫn là 2 lượt hợp lệ. Truyền excludeId khi đang sửa 1 lượt
- * có sẵn để không tự so trùng với chính nó.
+ * được phép trong cùng ca (vd cùng 1 container, cùng ca, 1 lượt "Đảo chuyển khách hàng" + 1 lượt
+ * "Đảo chuyển xuất tàu" là hợp lệ). Khác ca thì KHÔNG tính trùng dù cùng container/tác nghiệp -
+ * vd nâng rồi hạ cùng 1 container ở 2 ca khác nhau vẫn là 2 lượt hợp lệ. Truyền excludeId khi
+ * đang sửa 1 lượt có sẵn để không tự so trùng với chính nó.
  */
 export function findDuplicateJob<T extends DuplicateCheckJob>(
   jobs: T[],
-  candidate: { driverId: string; containerNo: string; operation: string; notes?: string; timestamp: string; shift: 'day' | 'night' },
+  candidate: { driverId: string; containerNo: string; operation: string; notes?: string; timestamp: string },
   excludeId?: string
 ): T | undefined {
-  const candidateShiftDate = getShiftDateStr(candidate.timestamp);
   const candidateContainer = cleanContainerNo(candidate.containerNo);
+  const candidateNotes = (candidate.notes ?? '').trim();
   return jobs.find((j) => {
     if (excludeId && j.id === excludeId) return false;
     if (j.driverId !== candidate.driverId) return false;
-    if (j.shift !== candidate.shift) return false;
-    if (getShiftDateStr(j.timestamp) !== candidateShiftDate) return false;
+    if (!isSameShiftWindow(j.timestamp, candidate.timestamp)) return false;
     if (cleanContainerNo(j.containerNo) !== candidateContainer) return false;
     if (j.operation !== candidate.operation) return false;
-    if (candidate.operation === 'dao_chuyen' && j.notes !== candidate.notes) return false;
+    if (candidate.operation === 'dao_chuyen' && (j.notes ?? '').trim() !== candidateNotes) return false;
     return true;
   });
 }
