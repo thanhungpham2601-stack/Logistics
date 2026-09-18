@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import { ContainerSize, OperationType, JobEntry, Driver, Shift, CargoStatus } from '../types';
 import { ContainerSizeRow, ContainerTypeRow, DaoChuyenNoteRow, EquipmentTypeRow, NotePresetRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { formatDateTime, formatDateOnly, isJobInLastNDays, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob, stripDiacritics, getAutoShift, getShiftDateStr, getShiftUtcRange, todayVN, addDaysToDateStr } from '../utils';
+import { formatDateTime, formatDateOnly, isJobInLastNDays, isJobInShift, validateContainerNumber, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob, stripDiacritics, getAutoShift, getShiftUtcRange, todayVN, addDaysToDateStr } from '../utils';
 import { fetchJobs } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
 
@@ -133,9 +133,13 @@ export default function DriverView({
 
   // Khi mở danh sách, tải lại dữ liệu của chính tài xế từ server. Điều này tránh cache cũ làm
   // thiếu lượt vừa nhập, đặc biệt khi request tải lịch sử lúc đăng nhập hoàn tất sau lúc lưu lượt.
+  // Nuốt lỗi ở đây sẽ cho ra đúng một màn hình trống giống hệt lúc thật sự chưa chấm công nào -
+  // rất khó đoán bệnh, nên báo rõ để phân biệt "tải hỏng" với "chưa có lượt".
   useEffect(() => {
     if (driverTab !== 'list') return;
-    void onRefreshJobs(currentDriver.id).catch(() => undefined);
+    void onRefreshJobs(currentDriver.id).catch(() =>
+      setErrorWarning('Không tải được danh sách sản lượng từ máy chủ - kiểm tra kết nối rồi mở lại tab này.')
+    );
   }, [currentDriver.id, driverTab, onRefreshJobs]);
 
   // Thời điểm ghi nhận: mặc định giờ hiện tại (tự chạy theo currentTime), hoặc thời điểm tài xế
@@ -147,7 +151,7 @@ export default function DriverView({
 
   // Ngày báo cáo của một ca, suy ra từ thời điểm hiện tại - dùng chung cho bộ lọc ca ở
   // "Sản lượng của tôi", phần thống kê ca hôm nay và file Excel xuất ra, để 3 chỗ luôn khớp số liệu.
-  // Quy ước: "ca đêm ngày X" bắt đầu 19:00 ngày X, kết thúc 07:00 ngày X+1.
+  // Quy ước (giống isJobInShift): "ca đêm ngày X" bắt đầu 19:00 ngày X, kết thúc 07:00 ngày X+1.
   const nowHourVN = Number(
     new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Ho_Chi_Minh', hour: '2-digit', hour12: false }).format(currentTime)
   );
@@ -159,10 +163,12 @@ export default function DriverView({
 
   const listShiftDate = shiftDateFor(listShift);
 
-  // `shift` được chốt khi lưu lượt, nên dùng cùng ngày-ca chuẩn hoá để lọc. Không suy ra lại
-  // bằng mốc thời gian trên trình duyệt, tránh làm sót lượt hợp lệ do cách parse timezone khác nhau.
+  // Lọc theo MỐC THỜI GIAN thực hiện, KHÔNG theo cột `shift` đã lưu: báo cáo/Excel của admin lẫn
+  // file Excel ngay bên dưới đều cắt ca bằng khoảng giờ của performed_at. Cột `shift` là dữ liệu
+  // rời (có bản ghi cũ tự chọn tay, hoặc ghi từ thiết bị lệch múi giờ) nên có thể mâu thuẫn với
+  // giờ thực hiện - lấy nó làm điều kiện lọc sẽ khiến lượt biến mất ở màn tài xế dù admin vẫn thấy.
   const isJobInSelectedShift = (job: JobEntry, shiftDate: string, shift: Shift) =>
-    job.shift === shift && getShiftDateStr(job.timestamp) === shiftDate;
+    isJobInShift(job.timestamp, shiftDate, shift);
 
   // Filter jobs submitted by THIS driver, theo đúng ca đang chọn
   const myJobs = jobs
