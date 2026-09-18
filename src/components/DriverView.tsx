@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { DatePicker } from 'antd';
@@ -399,13 +399,20 @@ export default function DriverView({
     setContainerNo((prev) => cleanContainerNo(prev));
   };
 
-  const selectQuickNote = (note: string) => {
-    if (notes.includes(note)) {
-      setNotes(prev => prev.replace(note, '').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/\s*,\s*$/, ''));
-    } else {
-      setNotes(prev => prev ? `${prev}, ${note}` : note);
-    }
-  };
+  // useCallback (deps rỗng, đọc "notes" qua callback form của setNotes) để tham chiếu hàm không đổi
+  // giữa các lần render - giữ cho <NotesSection/> (bọc React.memo bên dưới) không bị buộc render lại
+  // khi các state khác trong form đổi (vd containerNo).
+  const selectQuickNote = useCallback((note: string) => {
+    setNotes((prev) => {
+      if (prev.includes(note)) {
+        return prev.replace(note, '').replace(/,\s*,/g, ',').replace(/^,\s*/, '').replace(/\s*,\s*$/, '');
+      }
+      return prev ? `${prev}, ${note}` : note;
+    });
+  }, []);
+
+  // Cùng lý do trên - giữ ổn định cho <ShippingLinesSection/>.
+  const toggleCustomLineMode = useCallback(() => setIsCustomLineMode((prev) => !prev), []);
 
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans relative">
@@ -699,22 +706,11 @@ export default function DriverView({
           </div>
 
           {/* 2. Thiết Bị Sử Dụng - loại xe tài xế đang điều khiển */}
-          {equipmentTypes.length > 0 && (
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                2. Thiết Bị Sử Dụng <span className="text-red-600">*</span>
-              </label>
-              <select
-                value={selectedEquipment}
-                onChange={(e) => setSelectedEquipment(e.target.value)}
-                className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-600 transition-colors"
-              >
-                {equipmentTypes.map((eq) => (
-                  <option key={eq.code} value={eq.code}>{eq.label}</option>
-                ))}
-              </select>
-            </div>
-          )}
+          <EquipmentSection
+            equipmentTypes={equipmentTypes}
+            selectedEquipment={selectedEquipment}
+            onSelect={setSelectedEquipment}
+          />
 
           {/* 3. Container Number */}
           <div className="space-y-1.5">
@@ -750,209 +746,58 @@ export default function DriverView({
           </div>
 
           {/* 4. Loại Container */}
-          {containerTypes.length > 0 && (
-            <div className="space-y-1.5">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                4. Loại Container <span className="text-red-600">*</span>
-              </label>
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                {containerTypes.map((ct) => (
-                  <button
-                    key={ct.code}
-                    type="button"
-                    onClick={() => setSelectedContainerType(ct.code)}
-                    className={`py-3.5 text-center font-bold text-sm rounded-xl border-2 transition-all cursor-pointer ${
-                      selectedContainerType === ct.code
-                        ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/30'
-                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                    }`}
-                  >
-                    {ct.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
+          <ContainerTypeSection
+            containerTypes={containerTypes}
+            selectedContainerType={selectedContainerType}
+            onSelect={setSelectedContainerType}
+          />
 
           {/* 5. Container Size */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                5. Kích Thước (Size) <span className="text-red-600">*</span>
-              </label>
-              <div className="flex items-center bg-slate-100 border border-slate-300 rounded-lg p-1">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCargoStatus('hang')}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                    selectedCargoStatus === 'hang' ? 'bg-emerald-600 text-white' : 'text-slate-600'
-                  }`}
-                >
-                  <Package className="w-4 h-4" /> Có hàng
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setSelectedCargoStatus('rong')}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
-                    selectedCargoStatus === 'rong' ? 'bg-blue-600 text-white' : 'text-slate-600'
-                  }`}
-                >
-                  <PackageOpen className="w-4 h-4" /> Rỗng
-                </button>
-              </div>
-            </div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-              {sizes.map((size) => (
-                <button
-                  key={size.code}
-                  type="button"
-                  onClick={() => setSelectedSize(size.code)}
-                  className={`py-3.5 text-center font-bold font-mono text-sm rounded-xl border-2 transition-all cursor-pointer ${
-                    selectedSize === size.code
-                      ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/30'
-                      : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                  }`}
-                >
-                  {size.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <SizeSection
+            sizes={sizes}
+            selectedSize={selectedSize}
+            selectedCargoStatus={selectedCargoStatus}
+            onSelectSize={setSelectedSize}
+            onSelectCargoStatus={setSelectedCargoStatus}
+          />
 
           {/* 6. Shipping Lines */}
-          <div className="space-y-2">
-            <div className="flex justify-between items-center">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                6. Hãng Tàu (Lines) <span className="text-red-600">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={() => setIsCustomLineMode(!isCustomLineMode)}
-                className="text-xs hover:underline flex items-center space-x-1 font-bold cursor-pointer"
-                style={{ color: 'var(--theme-primary)' }}
-              >
-                {isCustomLineMode ? 'Chọn hãng phổ biến' : 'Nhập hãng khác'}
-              </button>
-            </div>
-
-            {isCustomLineMode ? (
-              <input
-                type="text"
-                value={customLine}
-                onChange={(e) => setCustomLine(e.target.value)}
-                placeholder="Nhập tên hãng tàu (Ví dụ: ONE, HMM...)"
-                className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-sm font-bold uppercase text-slate-900 focus:outline-none focus:border-blue-600 transition-colors placeholder:text-slate-400"
-                required={isCustomLineMode}
-              />
-            ) : (
-              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-[220px] overflow-y-auto pr-0.5">
-                {shippingLines.map((line) => (
-                  <button
-                    key={line}
-                    type="button"
-                    onClick={() => setSelectedLine(line)}
-                    className={`py-2.5 px-1 text-center font-bold text-xs rounded-xl border-2 transition-all cursor-pointer truncate ${
-                      selectedLine === line
-                        ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/30'
-                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                    }`}
-                  >
-                    {line}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <ShippingLinesSection
+            shippingLines={shippingLines}
+            selectedLine={selectedLine}
+            isCustomLineMode={isCustomLineMode}
+            customLine={customLine}
+            onSelectLine={setSelectedLine}
+            onToggleCustomMode={toggleCustomLineMode}
+            onCustomLineChange={setCustomLine}
+          />
 
           {/* 7. Operation Type */}
-          <div className="space-y-2">
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-              7. Loại Tác Nghiệp <span className="text-red-600">*</span>
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {operations.map((op, idx) => {
-                const palette = OP_COLOR_CYCLE[idx % OP_COLOR_CYCLE.length];
-                const isSelected = selectedOperation === op.code;
-                return (
-                  <button
-                    key={op.code}
-                    type="button"
-                    onClick={() => setSelectedOperation(op.code)}
-                    className={`py-3.5 px-3 text-left font-bold text-xs rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
-                      isSelected
-                        ? `${palette.solid} shadow-md`
-                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                    }`}
-                  >
-                    <span className="text-base mb-1">{OP_EMOJI[op.code] ?? '📦'} {op.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <OperationTypeSection
+            operations={operations}
+            selectedOperation={selectedOperation}
+            onSelect={setSelectedOperation}
+          />
 
           {/* 7b. Ghi chú đảo chuyển - chỉ hiện khi chọn tác nghiệp Đảo chuyển. Đây chính là Ghi chú
               của lượt này; phân loại đảo chuyển (dùng cho báo cáo admin) được suy ra tự động theo
               ghi chú đã chọn, tài xế không cần tự chọn phân loại riêng. */}
           {selectedOperation === 'dao_chuyen' && daoChuyenNotes.length > 0 && (
-            <div className="space-y-2">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                Ghi Chú Đảo Chuyển <span className="text-red-600">*</span>
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                {daoChuyenNotes.map((note) => (
-                  <button
-                    key={note.code}
-                    type="button"
-                    onClick={() => setSelectedDaoChuyenNote(note.code)}
-                    className={`py-2.5 px-2 text-center font-bold text-[11px] rounded-xl border-2 transition-all cursor-pointer ${
-                      selectedDaoChuyenNote === note.code
-                        ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-500/30'
-                        : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                    }`}
-                  >
-                    {note.label}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <DaoChuyenNoteSection
+              daoChuyenNotes={daoChuyenNotes}
+              selectedDaoChuyenNote={selectedDaoChuyenNote}
+              onSelect={setSelectedDaoChuyenNote}
+            />
           )}
 
           {/* 8. Ghi Chú - ẩn khi Đảo chuyển vì đã có Ghi Chú Đảo Chuyển ở trên đóng vai trò ghi chú của lượt này */}
           {selectedOperation !== 'dao_chuyen' && (
-            <div className="space-y-2">
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                8. Ghi Chú (Nếu có)
-              </label>
-              <input
-                type="text"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                placeholder="Nhập ghi chú chi tiết..."
-                className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-blue-600 transition-colors placeholder:text-slate-400"
-              />
-
-              {/* Quick Notes Suggestions */}
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {notePresets.filter((p) => p.is_active).map((preset) => {
-                  const isActive = notes.includes(preset.label);
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => selectQuickNote(preset.label)}
-                      className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border-2 transition-all cursor-pointer ${
-                        isActive
-                          ? 'bg-blue-600 border-blue-600 text-white'
-                          : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
-                      }`}
-                    >
-                      {isActive ? '✓ ' : '+ '}{preset.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <NotesSection
+              notes={notes}
+              notePresets={notePresets}
+              onNotesChange={setNotes}
+              onSelectQuickNote={selectQuickNote}
+            />
           )}
 
           {/* Submit Button - khoá tới khi số hiệu container đúng chuẩn 4 chữ + 7 số, hoặc khi đang lưu/xoá */}
@@ -1209,6 +1054,325 @@ export default function DriverView({
     </div>
   );
 }
+
+/**
+ * Các khối bên dưới (2, 4, 5, 6, 7, 7b, 8) tách khỏi DriverView và bọc React.memo: trước đây
+ * chúng nằm ngay trong JSX của DriverView nên MỖI phím tài xế gõ vào ô Số hiệu container/Ghi chú
+ * đều buộc React dựng lại toàn bộ các danh sách nút bấm này (vốn không đổi lúc đó) - đây chính là
+ * nguồn gây giật khi gõ trên điện thoại yếu. Nhờ memo, khi props không đổi thì React bỏ qua việc
+ * render lại các khối này, kể cả khi component cha (DriverView) render lại vì state khác đổi.
+ * Điều kiện để memo có tác dụng: các callback truyền xuống phải giữ NGUYÊN tham chiếu giữa các lần
+ * render (setState của React vốn ổn định sẵn; riêng "selectQuickNote"/"toggleCustomLineMode" phải
+ * bọc useCallback ở DriverView vì chúng không phải setState trực tiếp).
+ */
+
+const EquipmentSection = React.memo(function EquipmentSection({
+  equipmentTypes,
+  selectedEquipment,
+  onSelect,
+}: {
+  equipmentTypes: EquipmentTypeRow[];
+  selectedEquipment: string;
+  onSelect: (code: string) => void;
+}) {
+  if (equipmentTypes.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+        2. Thiết Bị Sử Dụng <span className="text-red-600">*</span>
+      </label>
+      <select
+        value={selectedEquipment}
+        onChange={(e) => onSelect(e.target.value)}
+        className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-600 transition-colors"
+      >
+        {equipmentTypes.map((eq) => (
+          <option key={eq.code} value={eq.code}>{eq.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+});
+
+const ContainerTypeSection = React.memo(function ContainerTypeSection({
+  containerTypes,
+  selectedContainerType,
+  onSelect,
+}: {
+  containerTypes: ContainerTypeRow[];
+  selectedContainerType: string;
+  onSelect: (code: string) => void;
+}) {
+  if (containerTypes.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+        4. Loại Container <span className="text-red-600">*</span>
+      </label>
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+        {containerTypes.map((ct) => (
+          <button
+            key={ct.code}
+            type="button"
+            onClick={() => onSelect(ct.code)}
+            className={`py-3.5 text-center font-bold text-sm rounded-xl border-2 transition-all cursor-pointer ${
+              selectedContainerType === ct.code
+                ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/30'
+                : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+            }`}
+          >
+            {ct.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+const SizeSection = React.memo(function SizeSection({
+  sizes,
+  selectedSize,
+  selectedCargoStatus,
+  onSelectSize,
+  onSelectCargoStatus,
+}: {
+  sizes: ContainerSizeRow[];
+  selectedSize: ContainerSize;
+  selectedCargoStatus: CargoStatus;
+  onSelectSize: (code: ContainerSize) => void;
+  onSelectCargoStatus: (status: CargoStatus) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between items-center">
+        <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+          5. Kích Thước (Size) <span className="text-red-600">*</span>
+        </label>
+        <div className="flex items-center bg-slate-100 border border-slate-300 rounded-lg p-1">
+          <button
+            type="button"
+            onClick={() => onSelectCargoStatus('hang')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
+              selectedCargoStatus === 'hang' ? 'bg-emerald-600 text-white' : 'text-slate-600'
+            }`}
+          >
+            <Package className="w-4 h-4" /> Có hàng
+          </button>
+          <button
+            type="button"
+            onClick={() => onSelectCargoStatus('rong')}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-md transition-all cursor-pointer ${
+              selectedCargoStatus === 'rong' ? 'bg-blue-600 text-white' : 'text-slate-600'
+            }`}
+          >
+            <PackageOpen className="w-4 h-4" /> Rỗng
+          </button>
+        </div>
+      </div>
+      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+        {sizes.map((size) => (
+          <button
+            key={size.code}
+            type="button"
+            onClick={() => onSelectSize(size.code)}
+            className={`py-3.5 text-center font-bold font-mono text-sm rounded-xl border-2 transition-all cursor-pointer ${
+              selectedSize === size.code
+                ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/30'
+                : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+            }`}
+          >
+            {size.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+const ShippingLinesSection = React.memo(function ShippingLinesSection({
+  shippingLines,
+  selectedLine,
+  isCustomLineMode,
+  customLine,
+  onSelectLine,
+  onToggleCustomMode,
+  onCustomLineChange,
+}: {
+  shippingLines: string[];
+  selectedLine: string;
+  isCustomLineMode: boolean;
+  customLine: string;
+  onSelectLine: (line: string) => void;
+  onToggleCustomMode: () => void;
+  onCustomLineChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between items-center">
+        <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+          6. Hãng Tàu (Lines) <span className="text-red-600">*</span>
+        </label>
+        <button
+          type="button"
+          onClick={onToggleCustomMode}
+          className="text-xs hover:underline flex items-center space-x-1 font-bold cursor-pointer"
+          style={{ color: 'var(--theme-primary)' }}
+        >
+          {isCustomLineMode ? 'Chọn hãng phổ biến' : 'Nhập hãng khác'}
+        </button>
+      </div>
+
+      {isCustomLineMode ? (
+        <input
+          type="text"
+          value={customLine}
+          onChange={(e) => onCustomLineChange(e.target.value)}
+          placeholder="Nhập tên hãng tàu (Ví dụ: ONE, HMM...)"
+          className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-sm font-bold uppercase text-slate-900 focus:outline-none focus:border-blue-600 transition-colors placeholder:text-slate-400"
+          required={isCustomLineMode}
+        />
+      ) : (
+        <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-[220px] overflow-y-auto pr-0.5">
+          {shippingLines.map((line) => (
+            <button
+              key={line}
+              type="button"
+              onClick={() => onSelectLine(line)}
+              className={`py-2.5 px-1 text-center font-bold text-xs rounded-xl border-2 transition-all cursor-pointer truncate ${
+                selectedLine === line
+                  ? 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-500/30'
+                  : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+              }`}
+            >
+              {line}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
+const OperationTypeSection = React.memo(function OperationTypeSection({
+  operations,
+  selectedOperation,
+  onSelect,
+}: {
+  operations: OperationTypeRow[];
+  selectedOperation: OperationType;
+  onSelect: (code: OperationType) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+        7. Loại Tác Nghiệp <span className="text-red-600">*</span>
+      </label>
+      <div className="grid grid-cols-3 gap-2">
+        {operations.map((op, idx) => {
+          const palette = OP_COLOR_CYCLE[idx % OP_COLOR_CYCLE.length];
+          const isSelected = selectedOperation === op.code;
+          return (
+            <button
+              key={op.code}
+              type="button"
+              onClick={() => onSelect(op.code)}
+              className={`py-3.5 px-3 text-left font-bold text-xs rounded-xl border-2 transition-all flex flex-col justify-between cursor-pointer ${
+                isSelected
+                  ? `${palette.solid} shadow-md`
+                  : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+              }`}
+            >
+              <span className="text-base mb-1">{OP_EMOJI[op.code] ?? '📦'} {op.label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+
+const DaoChuyenNoteSection = React.memo(function DaoChuyenNoteSection({
+  daoChuyenNotes,
+  selectedDaoChuyenNote,
+  onSelect,
+}: {
+  daoChuyenNotes: DaoChuyenNoteRow[];
+  selectedDaoChuyenNote: string;
+  onSelect: (code: string) => void;
+}) {
+  if (daoChuyenNotes.length === 0) return null;
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+        Ghi Chú Đảo Chuyển <span className="text-red-600">*</span>
+      </label>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+        {daoChuyenNotes.map((note) => (
+          <button
+            key={note.code}
+            type="button"
+            onClick={() => onSelect(note.code)}
+            className={`py-2.5 px-2 text-center font-bold text-[11px] rounded-xl border-2 transition-all cursor-pointer ${
+              selectedDaoChuyenNote === note.code
+                ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-500/30'
+                : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+            }`}
+          >
+            {note.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+});
+
+const NotesSection = React.memo(function NotesSection({
+  notes,
+  notePresets,
+  onNotesChange,
+  onSelectQuickNote,
+}: {
+  notes: string;
+  notePresets: NotePresetRow[];
+  onNotesChange: (value: string) => void;
+  onSelectQuickNote: (note: string) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
+        8. Ghi Chú (Nếu có)
+      </label>
+      <input
+        type="text"
+        value={notes}
+        onChange={(e) => onNotesChange(e.target.value)}
+        placeholder="Nhập ghi chú chi tiết..."
+        className="w-full bg-white border-2 border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:border-blue-600 transition-colors placeholder:text-slate-400"
+      />
+
+      {/* Quick Notes Suggestions */}
+      <div className="flex flex-wrap gap-1.5 pt-1">
+        {notePresets.filter((p) => p.is_active).map((preset) => {
+          const isActive = notes.includes(preset.label);
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              onClick={() => onSelectQuickNote(preset.label)}
+              className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border-2 transition-all cursor-pointer ${
+                isActive
+                  ? 'bg-blue-600 border-blue-600 text-white'
+                  : 'bg-white border-slate-300 text-slate-600 hover:border-slate-400'
+              }`}
+            >
+              {isActive ? '✓ ' : '+ '}{preset.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
 
 interface EditJobModalProps {
   job: JobEntry;
