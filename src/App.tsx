@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import { Driver, JobEntry, UserRole } from './types';
 import LoginScreen from './components/LoginScreen';
@@ -306,6 +306,10 @@ export default function App() {
     setJobs((prev) => prev.filter((j) => j.id !== jobId));
   };
 
+  const refreshDriverJobs = useCallback(async (driverId: string) => {
+    setJobs(await fetchJobs({ driverId }));
+  }, []);
+
   // ===================== Admin: accounts =====================
   const handleCreateAccount = async (input: { username: string; fullName: string; role: UserRole; phone?: string; licenseNumber?: string; email?: string }) => {
     const account = await createAccount(input);
@@ -484,6 +488,7 @@ export default function App() {
               onAddJob={handleAddJob}
               onUpdateJob={handleUpdateJob}
               onDeleteJob={handleDeleteJob}
+              onRefreshJobs={refreshDriverJobs}
             />
           ) : (
             <Navigate to={currentAccount ? homePathFor(currentAccount) : '/login'} replace />

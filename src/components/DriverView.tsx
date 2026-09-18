@@ -29,6 +29,7 @@ interface DriverViewProps {
   onAddJob: (job: Omit<JobEntry, 'id' | 'driverId' | 'driverName'>) => Promise<void>;
   onUpdateJob: (job: JobEntry) => Promise<void>;
   onDeleteJob: (jobId: string) => Promise<void>;
+  onRefreshJobs: (driverId: string) => Promise<void>;
 }
 
 /** Định dạng Date thành chuỗi "YYYY-MM-DDTHH:mm" theo giờ địa phương - dùng cho input datetime-local. */
@@ -72,7 +73,8 @@ export default function DriverView({
   containerTypes,
   onAddJob,
   onUpdateJob,
-  onDeleteJob
+  onDeleteJob,
+  onRefreshJobs
 }: DriverViewProps) {
   // Mỗi tab có URL riêng để có thể bookmark/chia sẻ thẳng: /driver/cham-cong (mặc định, kể cả
   // đứng ở /driver trần) và /driver/danh-sach-san-luong - giống cách accountant đã tách URL theo tab.
@@ -128,6 +130,13 @@ export default function DriverView({
     const timer = setTimeout(() => setErrorWarning(null), 5000);
     return () => clearTimeout(timer);
   }, [errorWarning]);
+
+  // Khi mở danh sách, tải lại dữ liệu của chính tài xế từ server. Điều này tránh cache cũ làm
+  // thiếu lượt vừa nhập, đặc biệt khi request tải lịch sử lúc đăng nhập hoàn tất sau lúc lưu lượt.
+  useEffect(() => {
+    if (driverTab !== 'list') return;
+    void onRefreshJobs(currentDriver.id).catch(() => undefined);
+  }, [currentDriver.id, driverTab, onRefreshJobs]);
 
   // Thời điểm ghi nhận: mặc định giờ hiện tại (tự chạy theo currentTime), hoặc thời điểm tài xế
   // tự chọn lại (ghi nhận muộn) - giới hạn không quá 3 ngày trước, không được chọn tương lai.
