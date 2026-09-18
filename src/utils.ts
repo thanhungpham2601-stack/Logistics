@@ -234,19 +234,21 @@ interface DuplicateCheckJob {
   driverId: string;
   containerNo: string;
   operation: string;
+  notes?: string;
   timestamp: string;
   shift: 'day' | 'night';
 }
 
 /**
  * Tìm lượt chấm công trùng: cùng tài xế + cùng ca (cùng ngày ca VÀ cùng loại ca ngày/đêm) + cùng
- * số container + cùng loại tác nghiệp. Khác ca thì KHÔNG tính trùng dù cùng container/tác nghiệp -
- * vd nâng rồi hạ cùng 1 container ở 2 ca khác nhau vẫn là 2 lượt hợp lệ, chỉ trùng khi lặp lại
- * đúng trong cùng 1 ca. Truyền excludeId khi đang sửa 1 lượt có sẵn để không tự so trùng với chính nó.
+ * số container + cùng loại tác nghiệp. Riêng Đảo chuyển, hai lượt có Ghi chú đảo chuyển khác nhau
+ * được phép trong cùng ca. Khác ca thì KHÔNG tính trùng dù cùng container/tác nghiệp - vd nâng rồi
+ * hạ cùng 1 container ở 2 ca khác nhau vẫn là 2 lượt hợp lệ. Truyền excludeId khi đang sửa 1 lượt
+ * có sẵn để không tự so trùng với chính nó.
  */
 export function findDuplicateJob<T extends DuplicateCheckJob>(
   jobs: T[],
-  candidate: { driverId: string; containerNo: string; operation: string; timestamp: string; shift: 'day' | 'night' },
+  candidate: { driverId: string; containerNo: string; operation: string; notes?: string; timestamp: string; shift: 'day' | 'night' },
   excludeId?: string
 ): T | undefined {
   const candidateShiftDate = getShiftDateStr(candidate.timestamp);
@@ -258,6 +260,7 @@ export function findDuplicateJob<T extends DuplicateCheckJob>(
     if (getShiftDateStr(j.timestamp) !== candidateShiftDate) return false;
     if (cleanContainerNo(j.containerNo) !== candidateContainer) return false;
     if (j.operation !== candidate.operation) return false;
+    if (candidate.operation === 'dao_chuyen' && j.notes !== candidate.notes) return false;
     return true;
   });
 }

@@ -215,12 +215,15 @@ export default function DriverView({
       return;
     }
 
+    const selectedNote = daoChuyenNotes.find((n) => n.code === selectedDaoChuyenNote);
+
     // Chặn trùng lượt: cùng tài xế (chính mình) + cùng ca + cùng container + cùng tác nghiệp.
-    // Khác ca thì không tính trùng (VD: nâng rồi hạ cùng 1 cont ở 2 ca khác nhau là hợp lệ).
+    // Riêng Đảo chuyển, được phép khi Ghi chú đảo chuyển khác nhau.
     const duplicate = findDuplicateJob(jobs, {
       driverId: currentDriver.id,
       containerNo: finalContainerNo,
       operation: selectedOperation,
+      notes: selectedOperation === 'dao_chuyen' ? (selectedNote?.label ?? '') : undefined,
       timestamp: effectiveTimestamp.toISOString(),
       shift: effectiveShift,
     });
@@ -231,8 +234,6 @@ export default function DriverView({
       );
       return;
     }
-
-    const selectedNote = daoChuyenNotes.find((n) => n.code === selectedDaoChuyenNote);
 
     setIsSubmitting(true);
     try {
@@ -1200,9 +1201,11 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
       return;
     }
 
+    const selectedNote = daoChuyenNotes.find((n) => n.code === daoChuyenNoteCode);
+    const jobNotes = operation === 'dao_chuyen' ? (selectedNote?.label ?? '') : notes.trim();
     const duplicate = findDuplicateJob(
       existingJobs,
-      { driverId: job.driverId, containerNo, operation, timestamp: parsedTimestamp.toISOString(), shift: getAutoShift(parsedTimestamp) },
+      { driverId: job.driverId, containerNo, operation, notes: jobNotes, timestamp: parsedTimestamp.toISOString(), shift: getAutoShift(parsedTimestamp) },
       job.id
     );
     if (duplicate) {
@@ -1212,8 +1215,6 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
       );
       return;
     }
-
-    const selectedNote = daoChuyenNotes.find((n) => n.code === daoChuyenNoteCode);
 
     setErrorWarning(null);
     setIsSaving(true);
@@ -1229,7 +1230,7 @@ function EditJobModal({ job, existingJobs, sizes, operations, shippingLines, dao
         containerType: containerType || undefined,
         timestamp: parsedTimestamp.toISOString(),
         shift: getAutoShift(parsedTimestamp),
-        notes: operation === 'dao_chuyen' ? (selectedNote?.label ?? '') : notes.trim(),
+        notes: jobNotes,
       });
     } finally {
       setIsSaving(false);
