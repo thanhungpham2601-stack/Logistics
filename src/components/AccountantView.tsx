@@ -68,6 +68,25 @@ interface AccountantViewProps {
   onDeleteNotePreset: (id: string) => Promise<void>;
 }
 
+function StatCard({ label, value, color, icon }: { label: string; value: number; color: string; icon: React.ReactNode }) {
+  return (
+    <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between transition-all hover:shadow-md">
+      <div>
+        <span className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider">{label}</span>
+        <span className="text-2xl font-bold text-slate-900 font-mono mt-1 block">
+          {value} <span className="text-xs font-bold text-slate-400">công</span>
+        </span>
+      </div>
+      <div
+        className="w-11 h-11 rounded-xl flex items-center justify-center font-black font-mono text-sm shrink-0"
+        style={{ backgroundColor: `color-mix(in srgb, ${color} 12%, white)`, color }}
+      >
+        {icon}
+      </div>
+    </div>
+  );
+}
+
 export default function AccountantView({
   jobs,
   drivers,
@@ -597,7 +616,7 @@ export default function AccountantView({
       <aside
         className={`${mobileNavOpen ? 'flex' : 'hidden'} lg:flex flex-col justify-between fixed lg:static inset-y-0 left-0 z-50 w-64 ${
           sidebarCollapsed ? 'lg:w-20' : 'lg:w-64'
-        } bg-[#0f172a] text-slate-100 shrink-0 no-print border-r border-slate-850 transition-all duration-200`}
+        } bg-white text-slate-700 shrink-0 no-print border-r border-slate-200 transition-all duration-200`}
       >
         <div className="p-4">
           <div className={`flex items-center mb-8 ${sidebarCollapsed ? 'flex-col space-y-2' : 'justify-between'}`}>
@@ -607,22 +626,22 @@ export default function AccountantView({
               </div>
               {!sidebarCollapsed && (
                 <div>
-                  <h2 className="text-sm font-black tracking-wider uppercase text-white">VẬN TẢI PRO</h2>
-                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">ICD AN GIA</p>
+                  <h2 className="text-sm font-black tracking-wider uppercase text-slate-900">VẬN TẢI PRO</h2>
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">ICD AN GIA</p>
                 </div>
               )}
             </div>
             <button
               onClick={() => setSidebarCollapsed((v) => !v)}
               title={sidebarCollapsed ? 'Mở rộng menu' : 'Thu gọn menu'}
-              className="hidden lg:flex p-1.5 text-slate-400 hover:text-white hover:bg-slate-900/60 rounded-lg cursor-pointer transition-colors shrink-0"
+              className="hidden lg:flex p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors shrink-0"
             >
               {sidebarCollapsed ? <ChevronsRight className="w-4 h-4" /> : <ChevronsLeft className="w-4 h-4" />}
             </button>
             <button
               onClick={() => setMobileNavOpen(false)}
               title="Đóng menu"
-              className="lg:hidden p-1.5 text-slate-400 hover:text-white hover:bg-slate-900/60 rounded-lg cursor-pointer transition-colors shrink-0"
+              className="lg:hidden p-1.5 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer transition-colors shrink-0"
             >
               <X className="w-4 h-4" />
             </button>
@@ -632,27 +651,27 @@ export default function AccountantView({
             <button
               onClick={() => { setActiveTab('overview'); setMobileNavOpen(false); }}
               title="Tổng Quan"
-              style={activeTab === 'overview' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
+              style={activeTab === 'overview' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)', color: 'var(--theme-primary)' } : undefined}
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
-                activeTab === 'overview' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                activeTab === 'overview' ? '' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              <LayoutDashboard className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'overview' ? 'var(--theme-accent-text)' : undefined }} />
+              <LayoutDashboard className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'overview' ? 'var(--theme-primary)' : undefined }} />
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Tổng Quan</span>
             </button>
             <button
               onClick={() => { setActiveTab('dashboard'); setMobileNavOpen(false); }}
               title="Danh Sách Sản Lượng"
-              style={activeTab === 'dashboard' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
+              style={activeTab === 'dashboard' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)', color: 'var(--theme-primary)' } : undefined}
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
-                activeTab === 'dashboard' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                activeTab === 'dashboard' ? '' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              <FileSpreadsheet className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'dashboard' ? 'var(--theme-accent-text)' : undefined }} />
+              <FileSpreadsheet className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'dashboard' ? 'var(--theme-primary)' : undefined }} />
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Danh Sách Sản Lượng</span>
             </button>
             {/* Tạm ẩn menu "Báo Cáo Kế Toán" theo yêu cầu - route /accountant/report vẫn hoạt động
@@ -664,7 +683,7 @@ export default function AccountantView({
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
-                activeTab === 'report' ? 'bg-slate-800 text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                activeTab === 'report' ? 'bg-slate-100 text-slate-900' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
               <Calculator className="w-4.5 h-4.5 text-slate-500 shrink-0" />
@@ -674,40 +693,40 @@ export default function AccountantView({
             <button
               onClick={() => { setActiveTab('driver'); setMobileNavOpen(false); }}
               title="Báo Cáo Theo Tài Xế"
-              style={activeTab === 'driver' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
+              style={activeTab === 'driver' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)', color: 'var(--theme-primary)' } : undefined}
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
-                activeTab === 'driver' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                activeTab === 'driver' ? '' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              <Users className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'driver' ? 'var(--theme-accent-text)' : undefined }} />
+              <Users className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'driver' ? 'var(--theme-primary)' : undefined }} />
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Theo Tài Xế</span>
             </button>
             <button
               onClick={() => { setActiveTab('nang_ha'); setMobileNavOpen(false); }}
               title="Báo Cáo Nâng/Hạ"
-              style={activeTab === 'nang_ha' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
+              style={activeTab === 'nang_ha' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)', color: 'var(--theme-primary)' } : undefined}
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
-                activeTab === 'nang_ha' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                activeTab === 'nang_ha' ? '' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              <ArrowUpDown className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'nang_ha' ? 'var(--theme-accent-text)' : undefined }} />
+              <ArrowUpDown className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'nang_ha' ? 'var(--theme-primary)' : undefined }} />
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Nâng/Hạ</span>
             </button>
             <button
               onClick={() => { setActiveTab('dao_chuyen'); setMobileNavOpen(false); }}
               title="Báo Cáo Đảo Chuyển"
-              style={activeTab === 'dao_chuyen' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
+              style={activeTab === 'dao_chuyen' ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)', color: 'var(--theme-primary)' } : undefined}
               className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                 sidebarCollapsed ? 'lg:justify-center' : ''
               } space-x-3 text-left ${
-                activeTab === 'dao_chuyen' ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                activeTab === 'dao_chuyen' ? '' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
-              <Repeat className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'dao_chuyen' ? 'var(--theme-accent-text)' : undefined }} />
+              <Repeat className="w-4.5 h-4.5 shrink-0" style={{ color: activeTab === 'dao_chuyen' ? 'var(--theme-primary)' : undefined }} />
               <span className={sidebarCollapsed ? 'lg:hidden' : ''}>Báo Cáo Đảo Chuyển</span>
             </button>
             {isAdmin && (
@@ -722,14 +741,14 @@ export default function AccountantView({
                     }
                   }}
                   title="Thiết Lập Hệ Thống"
-                  style={isSettingsTab ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 30%, #1e293b)' } : undefined}
+                  style={isSettingsTab ? { backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)', color: 'var(--theme-primary)' } : undefined}
                   className={`w-full flex items-center font-bold text-xs px-4 py-3 rounded-xl transition-all cursor-pointer ${
                     sidebarCollapsed ? 'lg:justify-center' : ''
                   } space-x-3 text-left ${
-                    isSettingsTab ? 'text-white' : 'text-slate-450 hover:text-white hover:bg-slate-900/60'
+                    isSettingsTab ? '' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                   }`}
                 >
-                  <Settings className="w-4.5 h-4.5 shrink-0" style={{ color: isSettingsTab ? 'var(--theme-accent-text)' : undefined }} />
+                  <Settings className="w-4.5 h-4.5 shrink-0" style={{ color: isSettingsTab ? 'var(--theme-primary)' : undefined }} />
                   <span className={`flex-1 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>Thiết Lập Hệ Thống</span>
                   <ChevronDown
                     className={`w-3.5 h-3.5 shrink-0 transition-transform ${settingsMenuOpen ? 'rotate-180' : ''} ${sidebarCollapsed ? 'lg:hidden' : ''}`}
@@ -738,11 +757,11 @@ export default function AccountantView({
                 {/* 2 sub-menu, mỗi cái có link riêng (/settings/nguoi-dung, /settings/master-data) - chỉ
                     hiện khi bấm mở menu cha (xổ xuống), ẩn khi sidebar thu gọn trên desktop. */}
                 {settingsMenuOpen && (
-                  <div className={`ml-4 pl-3 border-l border-slate-800 space-y-0.5 mt-0.5 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
+                  <div className={`ml-4 pl-3 border-l border-slate-200 space-y-0.5 mt-0.5 ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
                     <button
                       onClick={() => { setActiveTab('settings_users'); setMobileNavOpen(false); }}
                       className={`w-full flex items-center font-bold text-[11px] px-3 py-2 rounded-lg transition-all cursor-pointer space-x-2 text-left ${
-                        activeTab === 'settings_users' ? 'text-white bg-slate-900/70' : 'text-slate-500 hover:text-white hover:bg-slate-900/50'
+                        activeTab === 'settings_users' ? 'text-slate-900 bg-slate-100' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                       }`}
                     >
                       <Users className="w-3.5 h-3.5 shrink-0" />
@@ -751,7 +770,7 @@ export default function AccountantView({
                     <button
                       onClick={() => { setActiveTab('settings_master'); setMobileNavOpen(false); }}
                       className={`w-full flex items-center font-bold text-[11px] px-3 py-2 rounded-lg transition-all cursor-pointer space-x-2 text-left ${
-                        activeTab === 'settings_master' ? 'text-white bg-slate-900/70' : 'text-slate-500 hover:text-white hover:bg-slate-900/50'
+                        activeTab === 'settings_master' ? 'text-slate-900 bg-slate-100' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
                       }`}
                     >
                       <Database className="w-3.5 h-3.5 shrink-0" />
@@ -766,28 +785,28 @@ export default function AccountantView({
         </div>
 
         {/* Profile Admin Badge at bottom of Sidebar */}
-        <div className="p-4 border-t border-slate-850 bg-slate-950/40">
+        <div className="p-4 border-t border-slate-200 bg-slate-50">
           <div className={`flex items-center justify-between ${sidebarCollapsed ? 'lg:flex-col lg:space-y-2' : ''}`}>
             <div className={`flex items-center space-x-3 ${sidebarCollapsed ? 'lg:space-x-0' : ''}`}>
               <div
                 className="w-9 h-9 rounded-full flex items-center justify-center font-bold shadow-sm text-sm shrink-0 border"
                 style={{
-                  backgroundColor: 'color-mix(in srgb, var(--theme-primary) 18%, transparent)',
-                  borderColor: 'color-mix(in srgb, var(--theme-primary) 35%, transparent)',
-                  color: 'var(--theme-accent-text)',
+                  backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)',
+                  borderColor: 'color-mix(in srgb, var(--theme-primary) 30%, white)',
+                  color: 'var(--theme-primary)',
                 }}
               >
                 {isAdmin ? 'AD' : 'KT'}
               </div>
               <div className={sidebarCollapsed ? 'lg:hidden' : ''}>
-                <p className="text-xs font-black text-white leading-tight">{isAdmin ? 'Quản trị viên' : 'Kế toán trưởng'}</p>
+                <p className="text-xs font-black text-slate-900 leading-tight">{isAdmin ? 'Quản trị viên' : 'Kế toán trưởng'}</p>
                 <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Ban điều hành</p>
               </div>
             </div>
             <button
               onClick={() => { onLogout(); setMobileNavOpen(false); }}
               title="Đăng xuất"
-              className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-900/60 rounded-lg cursor-pointer transition-colors"
+              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
             >
               <LogOut className="w-4 h-4" />
             </button>
@@ -809,16 +828,21 @@ export default function AccountantView({
               >
                 <Menu className="w-5 h-5" />
               </button>
-              <h1 className="text-xl md:text-2xl font-black text-slate-900 mt-1.5 flex items-center space-x-2">
-                {activeTab === 'settings_users' ? (
-                  <Users className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
-                ) : activeTab === 'settings_master' ? (
-                  <Database className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
-                ) : activeTab === 'overview' ? (
-                  <LayoutDashboard className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
-                ) : (
-                  <FileSpreadsheet className="w-7 h-7" style={{ color: 'var(--theme-primary)' }} />
-                )}
+              <h1 className="text-xl md:text-2xl font-bold text-slate-900 mt-1.5 flex items-center space-x-3">
+                <span
+                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)' }}
+                >
+                  {activeTab === 'settings_users' ? (
+                    <Users className="w-5.5 h-5.5" style={{ color: 'var(--theme-primary)' }} />
+                  ) : activeTab === 'settings_master' ? (
+                    <Database className="w-5.5 h-5.5" style={{ color: 'var(--theme-primary)' }} />
+                  ) : activeTab === 'overview' ? (
+                    <LayoutDashboard className="w-5.5 h-5.5" style={{ color: 'var(--theme-primary)' }} />
+                  ) : (
+                    <FileSpreadsheet className="w-5.5 h-5.5" style={{ color: 'var(--theme-primary)' }} />
+                  )}
+                </span>
                 <span>
                   {activeTab === 'settings_users'
                     ? 'Thiết Lập Hệ Thống - Người Dùng'
@@ -846,7 +870,8 @@ export default function AccountantView({
             <button
               onClick={handleOpenAddModal}
               disabled={isMutating}
-              className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm px-4 py-2.5 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer"
+              style={{ backgroundColor: 'var(--theme-primary)' }}
+              className="flex items-center space-x-1.5 hover:brightness-110 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold text-sm px-4 py-2.5 rounded-lg shadow-sm hover:shadow transition-all cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Thêm lượt mới</span>
@@ -854,7 +879,8 @@ export default function AccountantView({
             <button
               onClick={handleExportExcel}
               disabled={isExporting}
-              className="flex items-center space-x-1.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-60 text-white font-bold text-sm px-4 py-2.5 rounded-lg transition-all cursor-pointer"
+              style={{ backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)', color: 'var(--theme-primary)' }}
+              className="flex items-center space-x-1.5 hover:brightness-95 disabled:opacity-60 font-bold text-sm px-4 py-2.5 rounded-lg transition-all cursor-pointer"
             >
               <Download className="w-4 h-4" />
               <span>{isExporting ? 'Đang tạo file...' : 'Tải Excel'}</span>
@@ -875,45 +901,10 @@ export default function AccountantView({
             cáo đó có bảng tổng số liệu riêng theo hãng tàu/tài xế. */}
         {(activeTab === 'dashboard' || activeTab === 'report') && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-br from-white to-[#f8fafc] p-4 rounded-xl border border-slate-200/80 shadow-xs flex items-center justify-between transition-all hover:shadow-md">
-            <div>
-              <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Tổng sản lượng ca</span>
-              <span className="text-2xl font-black text-slate-900 font-mono mt-0.5 block">{totalCount} công</span>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-2xs">
-              <TrendingUp className="w-5 h-5" />
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-white to-[#f5fbf8] p-4 rounded-xl border border-emerald-100 shadow-xs flex items-center justify-between transition-all hover:shadow-md">
-            <div>
-              <span className="block text-[10px] font-extrabold text-emerald-650 uppercase tracking-wider">Sản lượng size 20</span>
-              <span className="text-2xl font-black text-emerald-900 font-mono mt-0.5 block">{count20s} công</span>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 font-black font-mono text-xs flex items-center justify-center border border-emerald-100/60 shadow-2xs">
-              20'
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-white to-[#f4f8fe] p-4 rounded-xl border border-blue-100 shadow-xs flex items-center justify-between transition-all hover:shadow-md">
-            <div>
-              <span className="block text-[10px] font-extrabold text-blue-650 uppercase tracking-wider">Sản lượng size 40</span>
-              <span className="text-2xl font-black text-blue-900 font-mono mt-0.5 block">{count40s} công</span>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 font-black font-mono text-xs flex items-center justify-center border border-blue-100/60 shadow-2xs">
-              40'
-            </div>
-          </div>
-
-          <div className="bg-gradient-to-br from-white to-[#fefaf4] p-4 rounded-xl border border-amber-100 shadow-xs flex items-center justify-between transition-all hover:shadow-md">
-            <div>
-              <span className="block text-[10px] font-extrabold text-amber-650 uppercase tracking-wider">Sản lượng size 45</span>
-              <span className="text-2xl font-black text-amber-900 font-mono mt-0.5 block">{count45s} công</span>
-            </div>
-            <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 font-black font-mono text-xs flex items-center justify-center border border-amber-100/60 shadow-2xs">
-              45'
-            </div>
-          </div>
+          <StatCard label="Tổng sản lượng ca" value={totalCount} color="var(--theme-primary)" icon={<TrendingUp className="w-5 h-5" />} />
+          <StatCard label="Sản lượng size 20" value={count20s} color="#059669" icon="20'" />
+          <StatCard label="Sản lượng size 40" value={count40s} color="#2563eb" icon="40'" />
+          <StatCard label="Sản lượng size 45" value={count45s} color="#d97706" icon="45'" />
         </div>
         )}
       </div>
