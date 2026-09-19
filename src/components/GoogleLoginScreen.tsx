@@ -36,40 +36,43 @@ export default function GoogleLoginScreen({ resolving, authError, onBeforeSignIn
   const busy = resolving || isRedirecting;
 
   return (
-    <div className="bg-slate-900/90 border border-slate-800 hover:border-slate-700 rounded-3xl p-6 shadow-2xl flex flex-col justify-between relative overflow-hidden group transition-all duration-300">
+    <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
       <div>
         <div className="flex items-center justify-between mb-4">
-          <span className="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/10 group-hover:bg-emerald-500/20 group-hover:text-emerald-300 transition-colors">
+          <span
+            className="p-3 rounded-xl"
+            style={{ backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)', color: 'var(--theme-primary)' }}
+          >
             <ShieldCheck className="w-6 h-6" />
           </span>
-          <span className="text-[10px] bg-slate-850 text-slate-400 font-bold px-2 py-1 rounded-md border border-slate-800">
+          <span className="text-[10px] bg-slate-100 text-slate-500 font-bold px-2 py-1 rounded-md border border-slate-200">
             QUẢN TRỊ VIÊN & KẾ TOÁN
           </span>
         </div>
 
-        <h2 className="text-lg font-black text-white group-hover:text-emerald-400 transition-colors">DÀNH CHO KẾ TOÁN & ADMIN</h2>
-        <p className="text-xs text-slate-400 mt-1.5 leading-relaxed">
+        <h2 className="text-lg font-bold text-slate-900">DÀNH CHO KẾ TOÁN & ADMIN</h2>
+        <p className="text-xs text-slate-500 mt-1.5 leading-relaxed">
           Dùng tài khoản Gmail đã được quản trị viên cấp quyền để đăng nhập.
         </p>
 
         {authError && (
-          <div className="mt-4 bg-amber-500/10 border border-amber-500/30 rounded-xl p-3.5 flex items-start gap-2.5 text-left">
-            <AlertTriangle className="w-4.5 h-4.5 text-amber-400 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-200">{authError}</p>
+          <div className="mt-4 bg-amber-50 border border-amber-300 rounded-xl p-3.5 flex items-start gap-2.5 text-left">
+            <AlertTriangle className="w-4.5 h-4.5 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-800">{authError}</p>
           </div>
         )}
 
         <button
           onClick={handleGoogleSignIn}
           disabled={busy}
-          className="w-full mt-6 flex items-center justify-center gap-3 bg-white hover:bg-slate-100 disabled:opacity-60 disabled:cursor-not-allowed text-slate-800 font-bold text-sm py-3.5 rounded-xl shadow-lg transition-all cursor-pointer"
+          className="w-full mt-6 flex items-center justify-center gap-3 bg-white hover:bg-slate-50 border border-slate-300 disabled:opacity-60 disabled:cursor-not-allowed text-slate-800 font-bold text-sm py-3.5 rounded-xl shadow-xs transition-all cursor-pointer"
         >
           {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <GoogleIcon />}
           <span>{resolving ? 'Đang xác thực...' : isRedirecting ? 'Đang chuyển đến Google...' : 'Đăng nhập bằng Google'}</span>
         </button>
       </div>
 
-      <div className="mt-6 pt-4 border-t border-slate-800/60 text-[10px] text-slate-500">
+      <div className="mt-6 pt-4 border-t border-slate-200 text-[10px] text-slate-500">
         Chưa có tài khoản hoặc bị từ chối truy cập? Liên hệ quản trị viên để được cấp quyền.
       </div>
     </div>

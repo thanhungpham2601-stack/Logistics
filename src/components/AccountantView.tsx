@@ -784,34 +784,6 @@ export default function AccountantView({
           </nav>
         </div>
 
-        {/* Profile Admin Badge at bottom of Sidebar */}
-        <div className="p-4 border-t border-slate-200 bg-slate-50">
-          <div className={`flex items-center justify-between ${sidebarCollapsed ? 'lg:flex-col lg:space-y-2' : ''}`}>
-            <div className={`flex items-center space-x-3 ${sidebarCollapsed ? 'lg:space-x-0' : ''}`}>
-              <div
-                className="w-9 h-9 rounded-full flex items-center justify-center font-bold shadow-sm text-sm shrink-0 border"
-                style={{
-                  backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)',
-                  borderColor: 'color-mix(in srgb, var(--theme-primary) 30%, white)',
-                  color: 'var(--theme-primary)',
-                }}
-              >
-                {isAdmin ? 'AD' : 'KT'}
-              </div>
-              <div className={sidebarCollapsed ? 'lg:hidden' : ''}>
-                <p className="text-xs font-black text-slate-900 leading-tight">{isAdmin ? 'Quản trị viên' : 'Kế toán trưởng'}</p>
-                <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Ban điều hành</p>
-              </div>
-            </div>
-            <button
-              onClick={() => { onLogout(); setMobileNavOpen(false); }}
-              title="Đăng xuất"
-              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
       </aside>
 
       {/* Main Content Workspace Area */}
@@ -819,7 +791,7 @@ export default function AccountantView({
         
         {/* 1. Header with Stats Dashboard */}
         <div className="bg-white border-b border-slate-200 px-6 py-4 shadow-xs no-print">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-4 mb-4">
             <div>
               <button
                 onClick={() => setMobileNavOpen(true)}
@@ -863,6 +835,7 @@ export default function AccountantView({
               </h1>
             </div>
 
+          <div className="flex flex-wrap items-center gap-4 ml-auto">
           {/* Ẩn ở 3 báo cáo tổng hợp (Theo tài xế / Nâng-Hạ / Đảo chuyển) - mỗi báo cáo đó đã có
               nút "Tải Excel" riêng, còn "Thêm lượt mới"/"In Báo Cáo" không áp dụng cho các màn hình này. */}
           {(activeTab === 'dashboard' || activeTab === 'report') && (
@@ -894,6 +867,32 @@ export default function AccountantView({
             </button>
           </div>
           )}
+
+          {/* Tài khoản đang đăng nhập + Đăng xuất - góc phải trên cùng */}
+          <div className="flex items-center gap-3">
+            <div
+              className="w-9 h-9 rounded-full flex items-center justify-center font-bold shadow-sm text-sm shrink-0 border"
+              style={{
+                backgroundColor: 'color-mix(in srgb, var(--theme-primary) 12%, white)',
+                borderColor: 'color-mix(in srgb, var(--theme-primary) 30%, white)',
+                color: 'var(--theme-primary)',
+              }}
+            >
+              {isAdmin ? 'AD' : 'KT'}
+            </div>
+            <div className="hidden sm:block">
+              <p className="text-xs font-bold text-slate-900 leading-tight">{isAdmin ? 'Quản trị viên' : 'Kế toán trưởng'}</p>
+              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">Ban điều hành</p>
+            </div>
+            <button
+              onClick={onLogout}
+              title="Đăng xuất"
+              className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg cursor-pointer transition-colors"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+          </div>
         </div>
 
         {/* Dynamic Interactive Stats widgets - chỉ hiện ở Danh Sách Sản Lượng và Báo Cáo Kế Toán,
