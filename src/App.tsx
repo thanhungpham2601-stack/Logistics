@@ -428,8 +428,8 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center space-y-3 text-slate-400">
-        <Loader2 className="w-8 h-8 animate-spin" />
+      <div className="min-h-screen bg-[#eef2f6] flex flex-col items-center justify-center space-y-3 text-slate-500">
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--theme-primary)' }} />
         <p className="text-sm font-bold">Đang tải dữ liệu...</p>
       </div>
     );
@@ -437,10 +437,10 @@ export default function App() {
 
   if (loadError) {
     return (
-      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-4">
-        <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-6 max-w-md text-center space-y-2">
-          <p className="text-red-300 font-bold">Không kết nối được Supabase</p>
-          <p className="text-xs text-red-400/80">{loadError}</p>
+      <div className="min-h-screen bg-[#eef2f6] flex flex-col items-center justify-center p-4">
+        <div className="bg-white border border-red-200 rounded-2xl p-6 max-w-md text-center space-y-2 shadow-sm">
+          <p className="text-red-700 font-bold">Không kết nối được Supabase</p>
+          <p className="text-xs text-red-500">{loadError}</p>
         </div>
       </div>
     );
