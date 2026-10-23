@@ -14,7 +14,7 @@ import {
   LayoutDashboard, Database, AlertTriangle
 } from 'lucide-react';
 import { JobEntry, Driver, ContainerSize, OperationType, UserRole } from '../types';
-import { formatDateTime, formatDateOnly, isJobInShift, isJobInDateRange, stripDiacritics, getShiftUtcRange, getDateRangeUtc, getShiftDateStr, todayVN, getAutoShift, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob } from '../utils';
+import { formatDateTime, formatDateOnly, stripDiacritics, getShiftUtcRange, getDateTimeRangeUtc, isJobInUtcRange, getShiftDateStr, todayVN, getAutoShift, cleanContainerNo, cleanPastedContainerNo, formatJobNotesDisplay, findDuplicateJob } from '../utils';
 import { ContainerSizeRow, OperationRateRow, OperationTypeRow, ReconciliationReportType, ReportReconciliationRow } from '../lib/supabaseTypes';
 import { Account, ConfigLists, fetchJobs, fetchJobsPage, fetchReconciliations, upsertReconciliation } from '../lib/api';
 import { exportShiftReportToExcel } from '../lib/exportExcel';
@@ -180,10 +180,22 @@ export default function AccountantView({
   interface TabFilterState {
     date: string;
     toDate: string;
+    // Giờ:phút bắt đầu/kết thúc áp dụng khi lọc theo khoảng ngày (date !== toDate) - mặc định
+    // "00:00"/"23:59" (= trọn ngày, giống hệt hành vi trước khi có 2 ô giờ này) để không đổi kết
+    // quả của ai chưa từng đụng vào ô giờ. Không áp dụng khi lọc theo Ca ngày/Ca đêm (1 ngày).
+    fromTime: string;
+    toTime: string;
     shift: 'day' | 'night';
     driver: string;
   }
-  const makeDefaultFilters = (): TabFilterState => ({ date: todayVN(), toDate: todayVN(), shift: 'night', driver: 'all' });
+  const makeDefaultFilters = (): TabFilterState => ({
+    date: todayVN(),
+    toDate: todayVN(),
+    fromTime: '00:00',
+    toTime: '23:59',
+    shift: 'night',
+    driver: 'all',
+  });
   const [tabFilters, setTabFilters] = useState<Record<AccountantTab, TabFilterState>>({
     overview: makeDefaultFilters(),
     dashboard: makeDefaultFilters(),
@@ -197,12 +209,18 @@ export default function AccountantView({
   const currentFilters = tabFilters[activeTab];
   const filterDate = currentFilters.date;
   const filterToDate = currentFilters.toDate;
+  const filterFromTime = currentFilters.fromTime;
+  const filterToTime = currentFilters.toTime;
   const filterShift = currentFilters.shift;
   const filterDriver = currentFilters.driver;
   const setFilterDate = (value: string) =>
     setTabFilters((prev) => ({ ...prev, [activeTab]: { ...prev[activeTab], date: value } }));
   const setFilterToDate = (value: string) =>
     setTabFilters((prev) => ({ ...prev, [activeTab]: { ...prev[activeTab], toDate: value } }));
+  const setFilterFromTime = (value: string) =>
+    setTabFilters((prev) => ({ ...prev, [activeTab]: { ...prev[activeTab], fromTime: value } }));
+  const setFilterToTime = (value: string) =>
+    setTabFilters((prev) => ({ ...prev, [activeTab]: { ...prev[activeTab], toTime: value } }));
   const setFilterShift = (value: 'day' | 'night') =>
     setTabFilters((prev) => ({ ...prev, [activeTab]: { ...prev[activeTab], shift: value } }));
   const setFilterDriver = (value: string) =>
@@ -256,6 +274,14 @@ export default function AccountantView({
     return () => clearTimeout(timer);
   }, [formErrorWarning]);
 
+  // Khoảng UTC tương ứng với bộ lọc ngày/ca đang chọn của tab hiện tại - dùng để tải đúng dữ liệu
+  // cần thiết trực tiếp từ Supabase (xem "scopedJobs" bên dưới) thay vì lọc lại 1 mảng khổng lồ.
+  // Chế độ khoảng ngày (isRangeMode) cho chọn thêm giờ:phút bắt đầu/kết thúc (mặc định 00:00/23:59
+  // = trọn ngày); chế độ Ca ngày/đêm (1 ngày) vẫn giữ nguyên khung giờ cố định của ca.
+  const activeRange = isRangeMode
+    ? getDateTimeRangeUtc(filterDate, filterFromTime, filterToDate, filterToTime)
+    : getShiftUtcRange(filterDate, filterShift);
+
   // Apply filters - tách riêng thành hàm để dùng lại được cho dữ liệu vừa tải mới (vd trước khi
   // xuất Excel, xem applyFilters(freshJobs) ở handleExportExcel), không chỉ cho "jobs" đang có sẵn.
   const applyFilters = (list: JobEntry[]) =>
@@ -264,12 +290,9 @@ export default function AccountantView({
         // 1. Filter by Driver
         if (filterDriver !== 'all' && job.driverId !== filterDriver) return false;
 
-        // 2. Filter by Date: either a from-to range, or single-day shift
-        if (isRangeMode) {
-          if (!isJobInDateRange(job.timestamp, filterDate, filterToDate)) return false;
-        } else {
-          if (!isJobInShift(job.timestamp, filterDate, filterShift)) return false;
-        }
+        // 2. Filter by Date/time - "activeRange" đã gói gọn cả 2 chế độ (khoảng ngày-giờ hoặc ca
+        // ngày/đêm) thành 1 cặp mốc UTC, nên chỉ cần so sánh 1 lần duy nhất ở đây.
+        if (!isJobInUtcRange(job.timestamp, activeRange.from, activeRange.to)) return false;
 
         // 3. Filter by Search Query (container no, line, notes) - không phân biệt dấu
         if (searchQuery) {
@@ -284,10 +307,6 @@ export default function AccountantView({
         return true;
       })
       .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()); // Ascending order like the sheet
-
-  // Khoảng UTC tương ứng với bộ lọc ngày/ca đang chọn của tab hiện tại - dùng để tải đúng dữ liệu
-  // cần thiết trực tiếp từ Supabase (xem "scopedJobs" bên dưới) thay vì lọc lại 1 mảng khổng lồ.
-  const activeRange = isRangeMode ? getDateRangeUtc(filterDate, filterToDate) : getShiftUtcRange(filterDate, filterShift);
 
   // ===================== Dữ liệu cho các báo cáo tổng hợp =====================
   // Dòng "Tổng cộng" và các báo cáo tổng hợp (Danh Sách Sản Lượng, Kế Toán, Theo Tài Xế, Nâng/Hạ,
@@ -487,7 +506,10 @@ export default function AccountantView({
     const formattedDate = formatDateOnly(filterDate);
 
     if (isRangeMode) {
-      return `Báo cáo từ ${formattedDate} đến ${formatDateOnly(filterToDate)}`;
+      // "HH:mm" -> "HHhmm" (vd "06:30" -> "06h30"), khớp định dạng tiêu đề báo cáo nâng/hạ, đảo
+      // chuyển. Mặc định fromTime/toTime là "00:00"/"23:59" (trọn ngày) khi chưa tự chỉnh giờ.
+      const toHourMark = (hm: string) => hm.replace(':', 'h');
+      return `Từ ${toHourMark(filterFromTime)} ngày ${formattedDate} đến ${toHourMark(filterToTime)} ngày ${formatDateOnly(filterToDate)}`;
     }
 
     // Ca đêm bắt đầu tối filterDate, kết thúc sáng ngày kế tiếp.
@@ -921,6 +943,29 @@ export default function AccountantView({
             setFilterToDate(newTo);
           }}
         />
+
+        {/* Giờ:phút bắt đầu/kết thúc - chỉ áp dụng khi lọc theo khoảng ngày (isRangeMode), không
+            áp dụng cho chế độ Ca ngày/đêm (khung giờ đã cố định theo ca). Mặc định 00:00-23:59
+            (trọn ngày) nên không chỉnh gì thì kết quả giống hệt trước khi có 2 ô này. */}
+        {isRangeMode && (
+          <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-2 py-1 rounded-lg">
+            <input
+              type="time"
+              value={filterFromTime}
+              onChange={(e) => setFilterFromTime(e.target.value || '00:00')}
+              title="Giờ bắt đầu"
+              className="bg-white border border-slate-300 rounded px-1.5 py-1 text-xs font-bold focus:outline-none focus:border-slate-400"
+            />
+            <span className="text-xs text-slate-400 font-bold">-</span>
+            <input
+              type="time"
+              value={filterToTime}
+              onChange={(e) => setFilterToTime(e.target.value || '23:59')}
+              title="Giờ kết thúc"
+              className="bg-white border border-slate-300 rounded px-1.5 py-1 text-xs font-bold focus:outline-none focus:border-slate-400"
+            />
+          </div>
+        )}
 
         {/* Shift Filter - chỉ áp dụng khi xem đúng 1 ngày */}
         <div className={`flex items-center space-x-2 bg-slate-100 border border-slate-200 px-1 py-1 rounded-lg ${isRangeMode ? 'opacity-40 pointer-events-none' : ''}`}>

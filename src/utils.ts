@@ -10,10 +10,10 @@ function parseDateParts(dateStr: string): { y: number; m: number; d: number } {
   return { y, m, d };
 }
 
-/** Epoch ms tương ứng với thời điểm "hour:00" giờ VN của ngày dateStr (+dayOffset ngày). */
-function vnWallClockToUtcMs(dateStr: string, hour: number, dayOffset = 0): number {
+/** Epoch ms tương ứng với thời điểm "hour:minute" giờ VN của ngày dateStr (+dayOffset ngày). */
+function vnWallClockToUtcMs(dateStr: string, hour: number, dayOffset = 0, minute = 0): number {
   const { y, m, d } = parseDateParts(dateStr);
-  return Date.UTC(y, m - 1, d + dayOffset, hour - VN_UTC_OFFSET_HOURS, 0, 0);
+  return Date.UTC(y, m - 1, d + dayOffset, hour - VN_UTC_OFFSET_HOURS, minute, 0);
 }
 
 /**
@@ -212,6 +212,36 @@ export function getDateRangeUtc(fromDateStr: string, toDateStr: string): { from:
     from: new Date(vnWallClockToUtcMs(fromDateStr, 0)).toISOString(),
     to: new Date(vnWallClockToUtcMs(toDateStr, 0, 1)).toISOString(),
   };
+}
+
+/**
+ * Khoảng UTC (ISO) tương ứng với 1 khoảng ngày-giờ-phút cụ thể (giờ VN cố định) - dùng cho bộ lọc
+ * "từ ngày đến ngày" khi tài xế/kế toán chọn thêm giờ:phút thay vì trọn ngày lịch.
+ * "toTime" là mốc BAO GỒM cả phút đó (vd "23:59" nghĩa là tới hết 23:59:59), nên cộng thêm 1 phút
+ * để ra mốc loại trừ dùng cho so sánh "<". Nhờ vậy fromTime="00:00"/toTime="23:59" (giá trị mặc
+ * định khi người dùng chưa đụng vào ô giờ) cho kết quả giống hệt getDateRangeUtc - không đổi hành
+ * vi của những bộ lọc đang dùng theo trọn ngày.
+ */
+export function getDateTimeRangeUtc(
+  fromDateStr: string,
+  fromTime: string,
+  toDateStr: string,
+  toTime: string
+): { from: string; to: string } {
+  const [fromHour, fromMinute] = fromTime.split(':').map(Number);
+  const [toHour, toMinute] = toTime.split(':').map(Number);
+  return {
+    from: new Date(vnWallClockToUtcMs(fromDateStr, fromHour, 0, fromMinute)).toISOString(),
+    to: new Date(vnWallClockToUtcMs(toDateStr, toHour, 0, toMinute) + 60_000).toISOString(),
+  };
+}
+
+/** True nếu jobDateStr nằm trong khoảng UTC [fromIso, toIso) - dùng chung cho mọi kiểu lọc theo
+ *  khoảng thời gian (ca, ngày, hoặc ngày-giờ-phút tuỳ chọn) một khi đã quy ra UTC. */
+export function isJobInUtcRange(jobDateStr: string, fromIso: string, toIso: string): boolean {
+  const jobMs = new Date(jobDateStr).getTime();
+  if (isNaN(jobMs)) return true;
+  return jobMs >= new Date(fromIso).getTime() && jobMs < new Date(toIso).getTime();
 }
 
 /**

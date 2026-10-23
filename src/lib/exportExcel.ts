@@ -2,7 +2,7 @@ import ExcelJS from 'exceljs';
 import { JobEntry } from '../types';
 import { ContainerSizeRow, OperationTypeRow } from './supabaseTypes';
 import { formatDateTime, formatJobNotesDisplay } from '../utils';
-import { SummaryMatrix } from './reportMatrix';
+import { SummaryMatrix, SummaryColumnBlock, SummaryRowGroup } from './reportMatrix';
 import { DriverProductionRow, ShiftSummaryRow } from './driverReportMatrix';
 
 const COLOR_HEADER = 'FFFFD966';
@@ -151,7 +151,8 @@ export async function exportShiftReportToExcel(params: ExportShiftReportParams):
       sizes.forEach((size) => {
         const cell = sheet.getCell(r, cc);
         const isMatched = job.operation === op.code && job.size === size.code;
-        cell.value = isMatched ? 'X' : '';
+        // Dùng số 1 thay vì chữ "X" - số thì cộng/SUMIF được thẳng trong Excel, chữ thì không.
+        cell.value = isMatched ? 1 : null;
         cell.border = THIN_BORDER;
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
         cell.font = { bold: isMatched, size: 9 };
@@ -261,30 +262,219 @@ async function downloadWorkbook(workbook: ExcelJS.Workbook, filenamePrefix: stri
   URL.revokeObjectURL(url);
 }
 
+/** A1, B1, ... Z1, AA1... - đổi số thứ tự cột (1-based) sang chữ cột Excel, dùng để viết công thức. */
+function colLetter(col: number): string {
+  let s = '';
+  let n = col;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    s = String.fromCharCode(65 + rem) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+const DETAIL_SHEET_NAME = 'Danh sách chi tiết';
+// Luôn đặt tên sheet trong dấu nháy đơn khi tham chiếu công thức chéo sheet - bắt buộc vì tên có
+// khoảng trắng (Excel yêu cầu), và đúng cú pháp dù tên không có khoảng trắng.
+const DETAIL_SHEET_REF = `'${DETAIL_SHEET_NAME}'`;
+
+interface OperationDetailLayout {
+  // Cột "Lines" (hãng tàu) trong sheet chi tiết - tiêu chí SUMIF để kéo số liệu về sheet tổng hợp.
+  lineCol: number;
+  dataStartRow: number;
+  dataEndRow: number; // >= dataStartRow kể cả khi không có lượt nào (1 dòng trống để SUMIF không lỗi)
+  // Cột tương ứng với 1 ô (rowGroup × block × size) trong ma trận thưa của sheet chi tiết.
+  cellCol: (rowGroupIdx: number, blockIdx: number, sizeIdx: number) => number;
+}
+
+/**
+ * Sheet "Danh sách chi tiết": mỗi dòng đúng 1 lượt chấm công (Ngày giờ, Số hiệu container, Hãng
+ * tàu, Size...), cộng 1 ma trận thưa Tác nghiệp × (Khối rỗng/hàng nếu có) × Size - mỗi lượt chỉ có
+ * đúng 1 ô đánh dấu "1" ở đúng cột tác nghiệp+size (+khối) của nó. Sheet "Bảng tổng hợp" dùng SUMIF
+ * kéo thẳng từ các cột này, không phải nhập số tay - đúng theo mẫu đối soát công ty đang dùng.
+ */
+function addOperationDetailSheet(
+  workbook: ExcelJS.Workbook,
+  params: { jobs: JobEntry[]; sizes: ContainerSizeRow[]; blocks: SummaryColumnBlock[]; rowGroups: SummaryRowGroup[]; lines: string[]; subtitle: string }
+): OperationDetailLayout {
+  const { jobs, sizes, blocks, rowGroups, lines, subtitle } = params;
+  const sheet = workbook.addWorksheet(DETAIL_SHEET_NAME);
+  sheet.pageSetup = { ...PRINT_PAGE_SETUP };
+
+  const leadingCols = 6; // TT, Ngày, Số hiệu container, Lines, Hàng, Size
+  const dataColsPerGroup = blocks.length * sizes.length;
+  const dataCols = rowGroups.length * dataColsPerGroup;
+  const driverCol = leadingCols + dataCols + 1;
+  const notesCol = driverCol + 1;
+  const totalCols = notesCol;
+  const showBlockHeader = blocks.length > 1;
+  const headerRows = showBlockHeader ? 3 : 2;
+
+  const cellCol = (rgIdx: number, blkIdx: number, szIdx: number) =>
+    leadingCols + rgIdx * dataColsPerGroup + blkIdx * sizes.length + szIdx + 1;
+
+  sheet.mergeCells(1, 1, 1, totalCols);
+  const titleCell = sheet.getCell(1, 1);
+  titleCell.value = 'Danh Sách Chi Tiết Sản Lượng Container';
+  titleCell.font = { bold: true, size: 14 };
+  titleCell.alignment = { horizontal: 'center' };
+
+  sheet.mergeCells(2, 1, 2, totalCols);
+  const subtitleCell = sheet.getCell(2, 1);
+  subtitleCell.value = subtitle;
+  subtitleCell.font = { bold: true, size: 11 };
+  subtitleCell.alignment = { horizontal: 'center' };
+
+  const headerRow1Idx = 4;
+  const headerRow2Idx = showBlockHeader ? 5 : headerRow1Idx;
+  const headerRow3Idx = showBlockHeader ? 6 : headerRow1Idx + 1;
+  const dataStartIdx = headerRow3Idx + 1;
+
+  const leadLabels = ['TT', 'Ngày', 'Số hiệu container', 'Lines', 'Hàng', 'Size'];
+  leadLabels.forEach((label, i) => {
+    const col = i + 1;
+    sheet.mergeCells(headerRow1Idx, col, headerRow3Idx, col);
+    const cell = sheet.getCell(headerRow1Idx, col);
+    cell.value = label;
+    cell.font = { bold: true, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_HEADER } };
+    cell.border = THIN_BORDER;
+  });
+
+  [
+    { col: driverCol, label: 'Tài xế' },
+    { col: notesCol, label: 'Ghi chú' },
+  ].forEach(({ col, label }) => {
+    sheet.mergeCells(headerRow1Idx, col, headerRow3Idx, col);
+    const cell = sheet.getCell(headerRow1Idx, col);
+    cell.value = label;
+    cell.font = { bold: true, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_HEADER } };
+    cell.border = THIN_BORDER;
+  });
+
+  rowGroups.forEach((rg, rgIdx) => {
+    const groupStartCol = cellCol(rgIdx, 0, 0);
+    const groupEndCol = groupStartCol + dataColsPerGroup - 1;
+    sheet.mergeCells(headerRow1Idx, groupStartCol, headerRow1Idx, groupEndCol);
+    const groupCell = sheet.getCell(headerRow1Idx, groupStartCol);
+    groupCell.value = rg.label;
+    groupCell.font = { bold: true, size: 10 };
+    groupCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    groupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_GROUP } };
+    for (let c = groupStartCol; c <= groupEndCol; c++) sheet.getCell(headerRow1Idx, c).border = THIN_BORDER;
+
+    blocks.forEach((blk, blkIdx) => {
+      const blockStartCol = cellCol(rgIdx, blkIdx, 0);
+      const blockEndCol = blockStartCol + sizes.length - 1;
+      if (showBlockHeader) {
+        sheet.mergeCells(headerRow2Idx, blockStartCol, headerRow2Idx, blockEndCol);
+        const blockCell = sheet.getCell(headerRow2Idx, blockStartCol);
+        blockCell.value = blk.label;
+        blockCell.font = { bold: true, size: 9 };
+        blockCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        blockCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_SUBHEADER } };
+        for (let c = blockStartCol; c <= blockEndCol; c++) sheet.getCell(headerRow2Idx, c).border = THIN_BORDER;
+      }
+      sizes.forEach((size, szIdx) => {
+        const c = cellCol(rgIdx, blkIdx, szIdx);
+        const cell = sheet.getCell(headerRow3Idx, c);
+        cell.value = size.label;
+        cell.font = { bold: true, size: 9 };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_SUBHEADER } };
+        cell.border = THIN_BORDER;
+      });
+    });
+  });
+
+  // Chỉ liệt kê đúng những lượt thuộc phạm vi báo cáo này: hãng tàu nằm trong danh sách đang xét
+  // VÀ khớp ít nhất 1 nhóm tác nghiệp (rowGroups) - khớp đúng cách "matrix" lọc dữ liệu, để tổng
+  // SUMIF ở sheet tổng hợp luôn bằng đúng số dòng thực sự liệt kê ở đây.
+  const relevantJobs = jobs
+    .filter((j) => lines.includes(j.line) && rowGroups.some((rg) => rg.matches(j)))
+    .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+
+  relevantJobs.forEach((job, idx) => {
+    const r = dataStartIdx + idx;
+    sheet.getCell(r, 1).value = idx + 1;
+    sheet.getCell(r, 2).value = formatDateTime(job.timestamp);
+    sheet.getCell(r, 3).value = job.containerNo;
+    sheet.getCell(r, 4).value = job.line;
+    sheet.getCell(r, 5).value = job.cargoStatus === 'hang' ? 'Có hàng' : 'Rỗng';
+    sheet.getCell(r, 6).value = sizes.find((s) => s.code === job.size)?.label ?? job.size;
+    sheet.getCell(r, driverCol).value = job.driverName;
+    sheet.getCell(r, notesCol).value = formatJobNotesDisplay(job) || null;
+
+    const rgIdx = rowGroups.findIndex((rg) => rg.matches(job));
+    const szIdx = sizes.findIndex((s) => s.code === job.size);
+    const blkIdx = blocks.length === 1 ? 0 : blocks.findIndex((b) => b.cargoStatus === job.cargoStatus);
+    if (rgIdx >= 0 && szIdx >= 0 && blkIdx >= 0) {
+      sheet.getCell(r, cellCol(rgIdx, blkIdx, szIdx)).value = 1;
+    }
+
+    for (let c = 1; c <= totalCols; c++) {
+      const cell = sheet.getCell(r, c);
+      cell.border = THIN_BORDER;
+      cell.font = { size: 9 };
+      cell.alignment = { horizontal: c === 3 || c === 7 || c === notesCol ? 'left' : 'center', vertical: 'middle' };
+    }
+  });
+
+  const dataEndIdx = Math.max(dataStartIdx, dataStartIdx + relevantJobs.length - 1);
+
+  sheet.getColumn(1).width = 5;
+  sheet.getColumn(2).width = 16;
+  sheet.getColumn(3).width = 14;
+  sheet.getColumn(4).width = 10;
+  sheet.getColumn(5).width = 8;
+  sheet.getColumn(6).width = 7;
+  for (let c = leadingCols + 1; c <= leadingCols + dataCols; c++) sheet.getColumn(c).width = 7;
+  sheet.getColumn(driverCol).width = 18;
+  sheet.getColumn(notesCol).width = 24;
+
+  return { lineCol: 4, dataStartRow: dataStartIdx, dataEndRow: dataEndIdx, cellCol };
+}
+
 interface ExportOperationSummaryParams {
   matrix: SummaryMatrix;
+  jobs: JobEntry[];
   title: string;
   subtitle: string;
   filenamePrefix: string;
 }
 
-/** Xuất báo cáo tổng hợp (Nâng/Hạ, Đảo chuyển) ra .xlsx - cùng ma trận dữ liệu với bảng hiển thị trên web. */
+/**
+ * Xuất báo cáo tổng hợp (Nâng/Hạ, Đảo chuyển) ra .xlsx - 2 sheet: "Bảng tổng hợp" (công thức SUMIF
+ * kéo từ sheet chi tiết, không nhập số tay - theo đúng mẫu đối soát công ty đang dùng) và "Danh
+ * sách chi tiết" (từng lượt chấm công nằm trong phạm vi báo cáo).
+ */
 export async function exportOperationSummaryToExcel(params: ExportOperationSummaryParams): Promise<void> {
-  const { matrix, title, subtitle, filenamePrefix } = params;
-  const { sizes, blocks, lineGroups } = matrix;
+  const { matrix, jobs, title, subtitle, filenamePrefix } = params;
+  const { sizes, blocks, rowGroups, lineGroups } = matrix;
+  const lines = lineGroups.map((lg) => lg.lineCode);
 
   const workbook = new ExcelJS.Workbook();
-  const sheet = workbook.addWorksheet('Bao cao tong hop');
+
+  // Tạo sheet "Bảng tổng hợp" trước để nó đứng tab đầu tiên khi mở file (dễ nhìn thấy ngay) - dữ
+  // liệu của sheet này được điền vào SAU, vì công thức SUMIF cần biết trước bố cục cột/dòng của
+  // sheet "Danh sách chi tiết" (addOperationDetailSheet tạo và điền luôn sheet đó, đứng tab sau).
+  const sheet = workbook.addWorksheet('Bảng tổng hợp');
   sheet.pageSetup = { ...PRINT_PAGE_SETUP };
+
+  const detail = addOperationDetailSheet(workbook, { jobs, sizes, blocks, rowGroups, lines, subtitle });
 
   const leadingCols = 2; // Hãng tàu, Tác nghiệp
   const dataCols = blocks.length * sizes.length;
   const totalCol = leadingCols + dataCols + 1;
-  const confirmedCol = totalCol + 1;
+  const summaryCol = totalCol + 1; // "SL Tổng hợp" - gộp Tổng của mọi dòng tác nghiệp cùng 1 hãng tàu
+  const confirmedCol = summaryCol + 1;
   const diffCol = confirmedCol + 1;
   const totalCols = diffCol;
   const showBlockHeader = blocks.length > 1;
-  const headerRows = showBlockHeader ? 3 : 2;
 
   sheet.mergeCells(1, 1, 1, totalCols);
   const titleCell = sheet.getCell(1, 1);
@@ -292,9 +482,11 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
   titleCell.font = { bold: true, size: 14 };
   titleCell.alignment = { horizontal: 'center' };
 
+  // Tiêu đề kỳ báo cáo là công thức tham chiếu sang sheet chi tiết - chỉ 1 nơi để sửa (vd đổi khoảng
+  // ngày-giờ), nơi còn lại tự theo, giống cách mẫu đối soát công ty đang dùng.
   sheet.mergeCells(2, 1, 2, totalCols);
   const subtitleCell = sheet.getCell(2, 1);
-  subtitleCell.value = subtitle;
+  subtitleCell.value = { formula: `${DETAIL_SHEET_REF}!A2` };
   subtitleCell.font = { bold: true, size: 11 };
   subtitleCell.alignment = { horizontal: 'center' };
 
@@ -317,6 +509,7 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
 
   [
     { col: totalCol, label: 'Tổng' },
+    { col: summaryCol, label: 'SL Tổng hợp' },
     { col: confirmedCol, label: 'SL hãng xác nhận' },
     { col: diffCol, label: 'Chênh lệch' },
   ].forEach(({ col, label }) => {
@@ -358,20 +551,24 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
     col = endCol + 1;
   });
 
+  const detailLineRange = `${DETAIL_SHEET_REF}!$${colLetter(detail.lineCol)}$${detail.dataStartRow}:$${colLetter(detail.lineCol)}$${detail.dataEndRow}`;
+
   let r = dataStartIdx;
-  lineGroups.forEach((lg) => {
+  lineGroups.forEach((lg, lgIdx) => {
     const groupStartRow = r;
-    lg.rows.forEach((row) => {
+    lg.rows.forEach((row, rgIdx) => {
       sheet.getCell(r, 2).value = row.groupLabel;
       sheet.getCell(r, 2).alignment = { horizontal: 'left', vertical: 'middle' };
       sheet.getCell(r, 2).font = { size: 9, bold: true };
       sheet.getCell(r, 2).border = THIN_BORDER;
 
       let c = leadingCols + 1;
-      row.blockCounts.forEach((counts) => {
-        counts.forEach((count) => {
+      blocks.forEach((_blk, blkIdx) => {
+        sizes.forEach((_size, szIdx) => {
+          const detailCol = colLetter(detail.cellCol(rgIdx, blkIdx, szIdx));
+          const detailValueRange = `${DETAIL_SHEET_REF}!$${detailCol}$${detail.dataStartRow}:$${detailCol}$${detail.dataEndRow}`;
           const cell = sheet.getCell(r, c);
-          cell.value = count > 0 ? count : null;
+          cell.value = { formula: `SUMIF(${detailLineRange},$A${groupStartRow},${detailValueRange})` };
           cell.font = { size: 9 };
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
           cell.border = THIN_BORDER;
@@ -380,7 +577,9 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
       });
 
       const totalCell = sheet.getCell(r, totalCol);
-      totalCell.value = row.rowTotal > 0 ? row.rowTotal : null;
+      const rowStartCell = `${colLetter(leadingCols + 1)}${r}`;
+      const rowEndCell = `${colLetter(leadingCols + dataCols)}${r}`;
+      totalCell.value = { formula: `SUM(${rowStartCell}:${rowEndCell})` };
       totalCell.font = { bold: true, size: 9 };
       totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
       totalCell.border = THIN_BORDER;
@@ -390,6 +589,17 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
 
     const groupEndRow = r - 1;
 
+    // Bôi màu xen kẽ theo từng hãng tàu (không phải xen kẽ từng dòng) - cứ hãng tàu thứ chẵn (lgIdx
+    // lẻ, đếm từ 0) tô cả khối dòng của nó, hãng tàu kế tiếp để trắng, dễ phân biệt ranh giới giữa
+    // các hãng tàu khi bảng có nhiều dòng tác nghiệp xếp liên tiếp.
+    if (lgIdx % 2 === 1) {
+      for (let rr = groupStartRow; rr <= groupEndRow; rr++) {
+        for (let c = 1; c <= totalCols; c++) {
+          sheet.getCell(rr, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_MATCH } };
+        }
+      }
+    }
+
     sheet.mergeCells(groupStartRow, 1, groupEndRow, 1);
     const lineCell = sheet.getCell(groupStartRow, 1);
     lineCell.value = lg.lineCode;
@@ -397,6 +607,15 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
     lineCell.alignment = { horizontal: 'center', vertical: 'middle' };
     for (let rr = groupStartRow; rr <= groupEndRow; rr++) sheet.getCell(rr, 1).border = THIN_BORDER;
 
+    sheet.mergeCells(groupStartRow, summaryCol, groupEndRow, summaryCol);
+    const summaryCell = sheet.getCell(groupStartRow, summaryCol);
+    summaryCell.value = { formula: `SUM(${colLetter(totalCol)}${groupStartRow}:${colLetter(totalCol)}${groupEndRow})` };
+    summaryCell.font = { bold: true, size: 9 };
+    summaryCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    for (let rr = groupStartRow; rr <= groupEndRow; rr++) sheet.getCell(rr, summaryCol).border = THIN_BORDER;
+
+    // "SL hãng xác nhận" vẫn là ô nhập tay (kế toán tự gõ theo số liệu đối soát với hãng tàu) -
+    // không phải công thức, đồng bộ 1 chiều từ dữ liệu đã lưu lúc xuất file, giống hệt mẫu đối soát.
     sheet.mergeCells(groupStartRow, confirmedCol, groupEndRow, confirmedCol);
     const confirmedCell = sheet.getCell(groupStartRow, confirmedCol);
     confirmedCell.value = lg.confirmedQty ?? null;
@@ -406,11 +625,13 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
 
     sheet.mergeCells(groupStartRow, diffCol, groupEndRow, diffCol);
     const diffCell = sheet.getCell(groupStartRow, diffCol);
-    diffCell.value = lg.difference ?? null;
+    diffCell.value = { formula: `${colLetter(summaryCol)}${groupStartRow}-N(${colLetter(confirmedCol)}${groupStartRow})` };
     diffCell.font = { bold: true, size: 9 };
     diffCell.alignment = { horizontal: 'center', vertical: 'middle' };
     for (let rr = groupStartRow; rr <= groupEndRow; rr++) sheet.getCell(rr, diffCol).border = THIN_BORDER;
   });
+
+  const lastDataRow = r - 1;
 
   // Tong cong
   sheet.mergeCells(r, 1, r, leadingCols);
@@ -421,35 +642,40 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
   totalLabelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
   for (let c = 1; c <= leadingCols; c++) sheet.getCell(r, c).border = THIN_BORDER;
 
-  let tc = leadingCols + 1;
-  matrix.grandBlockSizeTotals.forEach((sizeTotals) => {
-    sizeTotals.forEach((t) => {
-      const cell = sheet.getCell(r, tc);
-      cell.value = t > 0 ? t : null;
-      cell.font = { bold: true, size: 9 };
-      cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
-      cell.border = THIN_BORDER;
-      tc++;
-    });
-  });
+  for (let c = leadingCols + 1; c <= leadingCols + dataCols; c++) {
+    const cell = sheet.getCell(r, c);
+    cell.value = { formula: `SUM(${colLetter(c)}${dataStartIdx}:${colLetter(c)}${lastDataRow})` };
+    cell.font = { bold: true, size: 9 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
+    cell.border = THIN_BORDER;
+  }
 
   const grandTotalCell = sheet.getCell(r, totalCol);
-  grandTotalCell.value = matrix.grandTotal;
+  grandTotalCell.value = { formula: `SUM(${colLetter(totalCol)}${dataStartIdx}:${colLetter(totalCol)}${lastDataRow})` };
   grandTotalCell.font = { bold: true, size: 10 };
   grandTotalCell.alignment = { horizontal: 'center', vertical: 'middle' };
   grandTotalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
   grandTotalCell.border = THIN_BORDER;
 
+  // "SUM" qua các ô đã merge (summaryCol/confirmedCol) chỉ cộng đúng 1 lần mỗi khối merge - Excel
+  // tự bỏ qua các ô trống do merge tạo ra, nên không bị đếm trùng theo số dòng tác nghiệp.
+  const grandSummaryCell = sheet.getCell(r, summaryCol);
+  grandSummaryCell.value = { formula: `SUM(${colLetter(summaryCol)}${dataStartIdx}:${colLetter(summaryCol)}${lastDataRow})` };
+  grandSummaryCell.font = { bold: true, size: 10 };
+  grandSummaryCell.alignment = { horizontal: 'center', vertical: 'middle' };
+  grandSummaryCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
+  grandSummaryCell.border = THIN_BORDER;
+
   const grandConfirmedCell = sheet.getCell(r, confirmedCol);
-  grandConfirmedCell.value = matrix.grandConfirmed ?? null;
+  grandConfirmedCell.value = { formula: `SUM(${colLetter(confirmedCol)}${dataStartIdx}:${colLetter(confirmedCol)}${lastDataRow})` };
   grandConfirmedCell.font = { bold: true, size: 10 };
   grandConfirmedCell.alignment = { horizontal: 'center', vertical: 'middle' };
   grandConfirmedCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
   grandConfirmedCell.border = THIN_BORDER;
 
   const grandDiffCell = sheet.getCell(r, diffCol);
-  grandDiffCell.value = matrix.grandDifference ?? null;
+  grandDiffCell.value = { formula: `${colLetter(summaryCol)}${r}-N(${colLetter(confirmedCol)}${r})` };
   grandDiffCell.font = { bold: true, size: 10 };
   grandDiffCell.alignment = { horizontal: 'center', vertical: 'middle' };
   grandDiffCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
@@ -459,6 +685,7 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
   sheet.getColumn(2).width = 22;
   for (let c = leadingCols + 1; c <= leadingCols + dataCols; c++) sheet.getColumn(c).width = 8;
   sheet.getColumn(totalCol).width = 9;
+  sheet.getColumn(summaryCol).width = 11;
   sheet.getColumn(confirmedCol).width = 14;
   sheet.getColumn(diffCol).width = 10;
 

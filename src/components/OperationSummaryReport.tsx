@@ -92,6 +92,7 @@ export default function OperationSummaryReport({
     try {
       await exportOperationSummaryToExcel({
         matrix,
+        jobs,
         title,
         subtitle,
         filenamePrefix: `${title.replace(/\s+/g, '_')}_${periodFrom}_${periodTo}`,
