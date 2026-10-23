@@ -11,6 +11,13 @@ const COLOR_SUBHEADER = 'FFFFF2CC';
 const COLOR_MATCH = 'FFFEF3C7';
 const COLOR_TOTAL = 'FFF2F2F2';
 
+// Màu riêng cho 2 sheet "Bảng tổng hợp"/"Danh sách chi tiết" (Nâng-Hạ, Đảo chuyển) - lấy đúng mã
+// màu từ 2 file mẫu đối soát công ty đang dùng (đọc trực tiếp từ file .xlsx mẫu bằng openpyxl):
+// header là xám phẳng E6E6E6, dải màu xen kẽ theo hãng tàu là màu theme "Accent 6" nhạt 80% của
+// theme Office 2007-2010 (quy đổi ra mã cố định FDEADA để không phụ thuộc theme của workbook).
+const OPSUM_COLOR_HEADER = 'FFE6E6E6';
+const OPSUM_COLOR_BAND = 'FFFDEADA';
+
 // Luôn in vừa 1 trang khổ A4 ngang theo chiều rộng (fitToWidth: 1) - chiều cao không giới hạn
 // (fitToHeight: 0) vì số dòng dữ liệu có thể nhiều hơn 1 trang, chỉ cần không bị cắt CỘT.
 const PRINT_PAGE_SETUP: Partial<ExcelJS.PageSetup> = {
@@ -309,7 +316,6 @@ function addOperationDetailSheet(
   const notesCol = driverCol + 1;
   const totalCols = notesCol;
   const showBlockHeader = blocks.length > 1;
-  const headerRows = showBlockHeader ? 3 : 2;
 
   const cellCol = (rgIdx: number, blkIdx: number, szIdx: number) =>
     leadingCols + rgIdx * dataColsPerGroup + blkIdx * sizes.length + szIdx + 1;
@@ -339,7 +345,7 @@ function addOperationDetailSheet(
     cell.value = label;
     cell.font = { bold: true, size: 10 };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_HEADER } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPSUM_COLOR_HEADER } };
     cell.border = THIN_BORDER;
   });
 
@@ -352,7 +358,7 @@ function addOperationDetailSheet(
     cell.value = label;
     cell.font = { bold: true, size: 10 };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_HEADER } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPSUM_COLOR_HEADER } };
     cell.border = THIN_BORDER;
   });
 
@@ -364,7 +370,7 @@ function addOperationDetailSheet(
     groupCell.value = rg.label;
     groupCell.font = { bold: true, size: 10 };
     groupCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    groupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_GROUP } };
+    groupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPSUM_COLOR_HEADER } };
     for (let c = groupStartCol; c <= groupEndCol; c++) sheet.getCell(headerRow1Idx, c).border = THIN_BORDER;
 
     blocks.forEach((blk, blkIdx) => {
@@ -376,7 +382,7 @@ function addOperationDetailSheet(
         blockCell.value = blk.label;
         blockCell.font = { bold: true, size: 9 };
         blockCell.alignment = { horizontal: 'center', vertical: 'middle' };
-        blockCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_SUBHEADER } };
+        blockCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPSUM_COLOR_HEADER } };
         for (let c = blockStartCol; c <= blockEndCol; c++) sheet.getCell(headerRow2Idx, c).border = THIN_BORDER;
       }
       sizes.forEach((size, szIdx) => {
@@ -385,7 +391,7 @@ function addOperationDetailSheet(
         cell.value = size.label;
         cell.font = { bold: true, size: 9 };
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_SUBHEADER } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPSUM_COLOR_HEADER } };
         cell.border = THIN_BORDER;
       });
     });
@@ -458,6 +464,11 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
   const lines = lineGroups.map((lg) => lg.lineCode);
 
   const workbook = new ExcelJS.Workbook();
+  // Ép Excel tính lại toàn bộ công thức ngay khi mở file - phòng trường hợp Excel/trình xem khác
+  // không tự động tính (hiện 0/trống) vì file không có sẵn kết quả cache cho MỌI công thức. Mỗi ô
+  // công thức bên dưới vẫn luôn kèm theo "result" (giá trị JS đã tính sẵn) nên dù không tính lại,
+  // số liệu hiển thị ngay lúc mở file vẫn đúng.
+  workbook.calcProperties.fullCalcOnLoad = true;
 
   // Tạo sheet "Bảng tổng hợp" trước để nó đứng tab đầu tiên khi mở file (dễ nhìn thấy ngay) - dữ
   // liệu của sheet này được điền vào SAU, vì công thức SUMIF cần biết trước bố cục cột/dòng của
@@ -486,7 +497,7 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
   // ngày-giờ), nơi còn lại tự theo, giống cách mẫu đối soát công ty đang dùng.
   sheet.mergeCells(2, 1, 2, totalCols);
   const subtitleCell = sheet.getCell(2, 1);
-  subtitleCell.value = { formula: `${DETAIL_SHEET_REF}!A2` };
+  subtitleCell.value = { formula: `${DETAIL_SHEET_REF}!A2`, result: subtitle };
   subtitleCell.font = { bold: true, size: 11 };
   subtitleCell.alignment = { horizontal: 'center' };
 
@@ -503,7 +514,7 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
     cell.value = label;
     cell.font = { bold: true, size: 10 };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_HEADER } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPSUM_COLOR_HEADER } };
     cell.border = THIN_BORDER;
   });
 
@@ -518,7 +529,7 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
     cell.value = label;
     cell.font = { bold: true, size: 10 };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_HEADER } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPSUM_COLOR_HEADER } };
     cell.border = THIN_BORDER;
   });
 
@@ -533,7 +544,7 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
       groupCell.value = blk.label;
       groupCell.font = { bold: true, size: 10 };
       groupCell.alignment = { horizontal: 'center', vertical: 'middle' };
-      groupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_GROUP } };
+      groupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPSUM_COLOR_HEADER } };
       for (let c = startCol; c <= endCol; c++) sheet.getCell(headerRow1Idx, c).border = THIN_BORDER;
     }
 
@@ -543,9 +554,12 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
       cell.value = size.label;
       cell.font = { bold: true, size: 9 };
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_SUBHEADER } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPSUM_COLOR_HEADER } };
       cell.border = THIN_BORDER;
-      if (showBlockHeader) sheet.mergeCells(headerRow2Idx, c, headerRow3Idx, c);
+      // Luôn merge xuống hết chiều cao của khối tiêu đề (dù có tách khối rỗng/hàng hay không) -
+      // nếu không, lúc không tách khối (headerRow2Idx === headerRow1Idx) cột dữ liệu chỉ cao 1
+      // dòng trong khi "Hãng tàu"/"Tổng"... cao 2 dòng, để lại 1 dòng trống lệch tầm nhìn phía dưới.
+      sheet.mergeCells(headerRow2Idx, c, headerRow3Idx, c);
     });
 
     col = endCol + 1;
@@ -568,7 +582,10 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
           const detailCol = colLetter(detail.cellCol(rgIdx, blkIdx, szIdx));
           const detailValueRange = `${DETAIL_SHEET_REF}!$${detailCol}$${detail.dataStartRow}:$${detailCol}$${detail.dataEndRow}`;
           const cell = sheet.getCell(r, c);
-          cell.value = { formula: `SUMIF(${detailLineRange},$A${groupStartRow},${detailValueRange})` };
+          // Luôn kèm "result" = giá trị JS đã tính sẵn (matrix đã tính đúng số này rồi) - để số liệu
+          // hiện đúng ngay khi mở file, không phụ thuộc việc Excel/trình xem có tự tính lại công
+          // thức hay không.
+          cell.value = { formula: `SUMIF(${detailLineRange},$A${groupStartRow},${detailValueRange})`, result: row.blockCounts[blkIdx][szIdx] };
           cell.font = { size: 9 };
           cell.alignment = { horizontal: 'center', vertical: 'middle' };
           cell.border = THIN_BORDER;
@@ -579,7 +596,7 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
       const totalCell = sheet.getCell(r, totalCol);
       const rowStartCell = `${colLetter(leadingCols + 1)}${r}`;
       const rowEndCell = `${colLetter(leadingCols + dataCols)}${r}`;
-      totalCell.value = { formula: `SUM(${rowStartCell}:${rowEndCell})` };
+      totalCell.value = { formula: `SUM(${rowStartCell}:${rowEndCell})`, result: row.rowTotal };
       totalCell.font = { bold: true, size: 9 };
       totalCell.alignment = { horizontal: 'center', vertical: 'middle' };
       totalCell.border = THIN_BORDER;
@@ -589,13 +606,14 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
 
     const groupEndRow = r - 1;
 
-    // Bôi màu xen kẽ theo từng hãng tàu (không phải xen kẽ từng dòng) - cứ hãng tàu thứ chẵn (lgIdx
-    // lẻ, đếm từ 0) tô cả khối dòng của nó, hãng tàu kế tiếp để trắng, dễ phân biệt ranh giới giữa
-    // các hãng tàu khi bảng có nhiều dòng tác nghiệp xếp liên tiếp.
-    if (lgIdx % 2 === 1) {
+    // Bôi màu xen kẽ theo từng hãng tàu (không phải xen kẽ từng dòng) - hãng tàu thứ chẵn (lgIdx
+    // chẵn, đếm từ 0) tô cả khối dòng của nó, hãng tàu kế tiếp để trắng, đúng theo mẫu đối soát công
+    // ty đang dùng. Chỉ tô tới hết cột dữ liệu (Hãng tàu/Tác nghiệp/các cột size) - KHÔNG lan sang
+    // Tổng/SL Tổng hợp/SL hãng xác nhận/Chênh lệch, đúng như mẫu (các cột đó luôn để trắng).
+    if (lgIdx % 2 === 0) {
       for (let rr = groupStartRow; rr <= groupEndRow; rr++) {
-        for (let c = 1; c <= totalCols; c++) {
-          sheet.getCell(rr, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_MATCH } };
+        for (let c = 1; c <= leadingCols + dataCols; c++) {
+          sheet.getCell(rr, c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPSUM_COLOR_BAND } };
         }
       }
     }
@@ -609,7 +627,7 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
 
     sheet.mergeCells(groupStartRow, summaryCol, groupEndRow, summaryCol);
     const summaryCell = sheet.getCell(groupStartRow, summaryCol);
-    summaryCell.value = { formula: `SUM(${colLetter(totalCol)}${groupStartRow}:${colLetter(totalCol)}${groupEndRow})` };
+    summaryCell.value = { formula: `SUM(${colLetter(totalCol)}${groupStartRow}:${colLetter(totalCol)}${groupEndRow})`, result: lg.lineTotal };
     summaryCell.font = { bold: true, size: 9 };
     summaryCell.alignment = { horizontal: 'center', vertical: 'middle' };
     for (let rr = groupStartRow; rr <= groupEndRow; rr++) sheet.getCell(rr, summaryCol).border = THIN_BORDER;
@@ -625,7 +643,7 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
 
     sheet.mergeCells(groupStartRow, diffCol, groupEndRow, diffCol);
     const diffCell = sheet.getCell(groupStartRow, diffCol);
-    diffCell.value = { formula: `${colLetter(summaryCol)}${groupStartRow}-N(${colLetter(confirmedCol)}${groupStartRow})` };
+    diffCell.value = { formula: `${colLetter(summaryCol)}${groupStartRow}-N(${colLetter(confirmedCol)}${groupStartRow})`, result: lg.lineTotal - (lg.confirmedQty ?? 0) };
     diffCell.font = { bold: true, size: 9 };
     diffCell.alignment = { horizontal: 'center', vertical: 'middle' };
     for (let rr = groupStartRow; rr <= groupEndRow; rr++) sheet.getCell(rr, diffCol).border = THIN_BORDER;
@@ -633,52 +651,48 @@ export async function exportOperationSummaryToExcel(params: ExportOperationSumma
 
   const lastDataRow = r - 1;
 
-  // Tong cong
+  // Tong cong - mẫu đối soát để dòng này trắng (không tô xám), chỉ đậm chữ.
   sheet.mergeCells(r, 1, r, leadingCols);
   const totalLabelCell = sheet.getCell(r, 1);
   totalLabelCell.value = 'Tổng cộng';
   totalLabelCell.font = { bold: true, size: 10 };
   totalLabelCell.alignment = { horizontal: 'right', vertical: 'middle' };
-  totalLabelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
   for (let c = 1; c <= leadingCols; c++) sheet.getCell(r, c).border = THIN_BORDER;
 
   for (let c = leadingCols + 1; c <= leadingCols + dataCols; c++) {
+    const blkIdx = Math.floor((c - leadingCols - 1) / sizes.length);
+    const szIdx = (c - leadingCols - 1) % sizes.length;
     const cell = sheet.getCell(r, c);
-    cell.value = { formula: `SUM(${colLetter(c)}${dataStartIdx}:${colLetter(c)}${lastDataRow})` };
+    cell.value = { formula: `SUM(${colLetter(c)}${dataStartIdx}:${colLetter(c)}${lastDataRow})`, result: matrix.grandBlockSizeTotals[blkIdx][szIdx] };
     cell.font = { bold: true, size: 9 };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
     cell.border = THIN_BORDER;
   }
 
   const grandTotalCell = sheet.getCell(r, totalCol);
-  grandTotalCell.value = { formula: `SUM(${colLetter(totalCol)}${dataStartIdx}:${colLetter(totalCol)}${lastDataRow})` };
+  grandTotalCell.value = { formula: `SUM(${colLetter(totalCol)}${dataStartIdx}:${colLetter(totalCol)}${lastDataRow})`, result: matrix.grandTotal };
   grandTotalCell.font = { bold: true, size: 10 };
   grandTotalCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  grandTotalCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
   grandTotalCell.border = THIN_BORDER;
 
   // "SUM" qua các ô đã merge (summaryCol/confirmedCol) chỉ cộng đúng 1 lần mỗi khối merge - Excel
   // tự bỏ qua các ô trống do merge tạo ra, nên không bị đếm trùng theo số dòng tác nghiệp.
   const grandSummaryCell = sheet.getCell(r, summaryCol);
-  grandSummaryCell.value = { formula: `SUM(${colLetter(summaryCol)}${dataStartIdx}:${colLetter(summaryCol)}${lastDataRow})` };
+  grandSummaryCell.value = { formula: `SUM(${colLetter(summaryCol)}${dataStartIdx}:${colLetter(summaryCol)}${lastDataRow})`, result: matrix.grandTotal };
   grandSummaryCell.font = { bold: true, size: 10 };
   grandSummaryCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  grandSummaryCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
   grandSummaryCell.border = THIN_BORDER;
 
   const grandConfirmedCell = sheet.getCell(r, confirmedCol);
-  grandConfirmedCell.value = { formula: `SUM(${colLetter(confirmedCol)}${dataStartIdx}:${colLetter(confirmedCol)}${lastDataRow})` };
+  grandConfirmedCell.value = { formula: `SUM(${colLetter(confirmedCol)}${dataStartIdx}:${colLetter(confirmedCol)}${lastDataRow})`, result: matrix.grandConfirmed ?? 0 };
   grandConfirmedCell.font = { bold: true, size: 10 };
   grandConfirmedCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  grandConfirmedCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
   grandConfirmedCell.border = THIN_BORDER;
 
   const grandDiffCell = sheet.getCell(r, diffCol);
-  grandDiffCell.value = { formula: `${colLetter(summaryCol)}${r}-N(${colLetter(confirmedCol)}${r})` };
+  grandDiffCell.value = { formula: `${colLetter(summaryCol)}${r}-N(${colLetter(confirmedCol)}${r})`, result: matrix.grandTotal - (matrix.grandConfirmed ?? 0) };
   grandDiffCell.font = { bold: true, size: 10 };
   grandDiffCell.alignment = { horizontal: 'center', vertical: 'middle' };
-  grandDiffCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
   grandDiffCell.border = THIN_BORDER;
 
   sheet.getColumn(1).width = 14;
