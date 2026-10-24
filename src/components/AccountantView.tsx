@@ -934,7 +934,10 @@ export default function AccountantView({
           không phải lọc theo 1 ca), nên không dùng chung bộ lọc ca/ngày/tài xế ở đây. */}
       {activeTab !== 'settings_users' && activeTab !== 'settings_master' && activeTab !== 'overview' && (
       <div className="bg-white border-b border-slate-200 px-6 py-4 flex flex-wrap items-center gap-4 no-print shadow-xs">
-        {/* Date Range Filter */}
+        {/* Date Range Filter - khi đang lọc theo khoảng ngày (isRangeMode), cho chọn thêm giờ:phút
+            ngay trong cùng 1 popup lịch (showTime) thay vì tách riêng ô giờ bên ngoài. Chế độ Ca
+            ngày/đêm (lọc 1 ngày) không cần giờ riêng vì khung giờ đã cố định theo ca. Mặc định
+            00:00-23:59 (trọn ngày) nên không chỉnh gì thì kết quả giống hệt trước khi có giờ. */}
         <DateRangePicker
           from={filterDate}
           to={filterToDate}
@@ -942,30 +945,14 @@ export default function AccountantView({
             setFilterDate(newFrom);
             setFilterToDate(newTo);
           }}
+          showTime={isRangeMode}
+          fromTime={filterFromTime}
+          toTime={filterToTime}
+          onTimeChange={(newFromTime, newToTime) => {
+            setFilterFromTime(newFromTime);
+            setFilterToTime(newToTime);
+          }}
         />
-
-        {/* Giờ:phút bắt đầu/kết thúc - chỉ áp dụng khi lọc theo khoảng ngày (isRangeMode), không
-            áp dụng cho chế độ Ca ngày/đêm (khung giờ đã cố định theo ca). Mặc định 00:00-23:59
-            (trọn ngày) nên không chỉnh gì thì kết quả giống hệt trước khi có 2 ô này. */}
-        {isRangeMode && (
-          <div className="flex items-center gap-1.5 bg-slate-100 border border-slate-200 px-2 py-1 rounded-lg">
-            <input
-              type="time"
-              value={filterFromTime}
-              onChange={(e) => setFilterFromTime(e.target.value || '00:00')}
-              title="Giờ bắt đầu"
-              className="bg-white border border-slate-300 rounded px-1.5 py-1 text-xs font-bold focus:outline-none focus:border-slate-400"
-            />
-            <span className="text-xs text-slate-400 font-bold">-</span>
-            <input
-              type="time"
-              value={filterToTime}
-              onChange={(e) => setFilterToTime(e.target.value || '23:59')}
-              title="Giờ kết thúc"
-              className="bg-white border border-slate-300 rounded px-1.5 py-1 text-xs font-bold focus:outline-none focus:border-slate-400"
-            />
-          </div>
-        )}
 
         {/* Shift Filter - chỉ áp dụng khi xem đúng 1 ngày */}
         <div className={`flex items-center space-x-2 bg-slate-100 border border-slate-200 px-1 py-1 rounded-lg ${isRangeMode ? 'opacity-40 pointer-events-none' : ''}`}>

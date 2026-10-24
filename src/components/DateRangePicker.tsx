@@ -13,9 +13,17 @@ interface DateRangePickerProps {
   from: string; // "YYYY-MM-DD"
   to: string; // "YYYY-MM-DD"
   onChange: (from: string, to: string) => void;
+  // Bật để chọn thêm giờ:phút ngay trong cùng 1 popup lịch (thay vì phải mở thêm ô giờ riêng bên
+  // ngoài) - dùng cho báo cáo cần mốc giờ chính xác (vd đối soát theo đúng "06h30 ngày X"). Chỉ
+  // hiện giờ:phút (không có giây) theo đúng yêu cầu.
+  showTime?: boolean;
+  fromTime?: string; // "HH:mm"
+  toTime?: string; // "HH:mm"
+  onTimeChange?: (fromTime: string, toTime: string) => void;
 }
 
 const YMD = 'YYYY-MM-DD';
+const HM = 'HH:mm';
 
 const PRESETS: { label: string; value: [Dayjs, Dayjs] }[] = [
   { label: 'Hôm nay', value: [dayjs(), dayjs()] },
@@ -28,18 +36,22 @@ const PRESETS: { label: string; value: [Dayjs, Dayjs] }[] = [
   { label: 'Năm trước', value: [dayjs().subtract(1, 'year').startOf('year'), dayjs().subtract(1, 'year').endOf('year')] },
 ];
 
-export default function DateRangePicker({ from, to, onChange }: DateRangePickerProps) {
-  const value: [Dayjs, Dayjs] = [dayjs(from, YMD), dayjs(to, YMD)];
+export default function DateRangePicker({ from, to, onChange, showTime, fromTime, toTime, onTimeChange }: DateRangePickerProps) {
+  const value: [Dayjs, Dayjs] = showTime
+    ? [dayjs(`${from}T${fromTime ?? '00:00'}`), dayjs(`${to}T${toTime ?? '23:59'}`)]
+    : [dayjs(from, YMD), dayjs(to, YMD)];
 
   return (
     <RangePicker
       value={value}
-      format="DD/MM/YYYY"
+      format={showTime ? `DD/MM/YYYY ${HM}` : 'DD/MM/YYYY'}
+      showTime={showTime ? { format: HM } : undefined}
       allowClear={false}
       presets={PRESETS}
       onChange={(dates) => {
         if (!dates || !dates[0] || !dates[1]) return;
         onChange(dates[0].format(YMD), dates[1].format(YMD));
+        if (showTime) onTimeChange?.(dates[0].format(HM), dates[1].format(HM));
       }}
       className="!h-[38px] !rounded-lg"
     />
