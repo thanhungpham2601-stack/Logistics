@@ -404,6 +404,11 @@ function addOperationDetailSheet(
     .filter((j) => lines.includes(j.line) && rowGroups.some((rg) => rg.matches(j)))
     .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
 
+  // Tổng số lượt khớp đúng từng cột (rowGroup × block × size) - cộng dồn ngay trong lúc duyệt từng
+  // lượt, dùng làm "result" cache cho công thức SUM ở dòng Tổng cộng bên dưới (xem cùng lý do dùng
+  // result cache ở sheet tổng hợp: để số liệu hiện đúng ngay khi mở file).
+  const columnTotals = new Array(dataCols).fill(0);
+
   relevantJobs.forEach((job, idx) => {
     const r = dataStartIdx + idx;
     sheet.getCell(r, 1).value = idx + 1;
@@ -419,7 +424,12 @@ function addOperationDetailSheet(
     const szIdx = sizes.findIndex((s) => s.code === job.size);
     const blkIdx = blocks.length === 1 ? 0 : blocks.findIndex((b) => b.cargoStatus === job.cargoStatus);
     if (rgIdx >= 0 && szIdx >= 0 && blkIdx >= 0) {
-      sheet.getCell(r, cellCol(rgIdx, blkIdx, szIdx)).value = 1;
+      const markCol = cellCol(rgIdx, blkIdx, szIdx);
+      const markCell = sheet.getCell(r, markCol);
+      markCell.value = 1;
+      // Tô màu đúng ô đánh dấu "1" để dễ rà soát bằng mắt - cùng màu với ô khớp bên báo cáo ca.
+      markCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_MATCH } };
+      columnTotals[markCol - leadingCols - 1]++;
     }
 
     for (let c = 1; c <= totalCols; c++) {
@@ -431,6 +441,36 @@ function addOperationDetailSheet(
   });
 
   const dataEndIdx = Math.max(dataStartIdx, dataStartIdx + relevantJobs.length - 1);
+
+  // Dòng Tổng cộng - cộng dọc từng cột tác nghiệp+size, đúng số với dòng "Tổng cộng" bên sheet
+  // "Bảng tổng hợp" (cả 2 đều cộng từ cùng 1 nguồn: các ô đánh "1" phía trên).
+  const totalRowIdx = dataStartIdx + relevantJobs.length;
+  sheet.mergeCells(totalRowIdx, 1, totalRowIdx, leadingCols);
+  const totalLabelCell = sheet.getCell(totalRowIdx, 1);
+  totalLabelCell.value = 'Tổng cộng';
+  totalLabelCell.font = { bold: true, size: 10 };
+  totalLabelCell.alignment = { horizontal: 'right', vertical: 'middle' };
+  totalLabelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
+  for (let c = 1; c <= leadingCols; c++) sheet.getCell(totalRowIdx, c).border = THIN_BORDER;
+
+  for (let c = leadingCols + 1; c <= leadingCols + dataCols; c++) {
+    const cell = sheet.getCell(totalRowIdx, c);
+    const colTotal = columnTotals[c - leadingCols - 1];
+    cell.value =
+      relevantJobs.length > 0
+        ? { formula: `SUM(${colLetter(c)}${dataStartIdx}:${colLetter(c)}${totalRowIdx - 1})`, result: colTotal }
+        : 0;
+    cell.font = { bold: true, size: 9 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
+    cell.border = THIN_BORDER;
+  }
+
+  [driverCol, notesCol].forEach((c) => {
+    const cell = sheet.getCell(totalRowIdx, c);
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLOR_TOTAL } };
+    cell.border = THIN_BORDER;
+  });
 
   sheet.getColumn(1).width = 5;
   sheet.getColumn(2).width = 16;
