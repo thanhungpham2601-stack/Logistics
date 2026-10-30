@@ -314,19 +314,41 @@ export async function fetchOperationRates(): Promise<OperationRateRow[]> {
 
 // ===================== JOB ENTRIES =====================
 
+// PostgREST/Supabase mặc định chặn tối đa 1000 dòng MỖI LẦN GỌI (db-max-rows) nếu không tự phân
+// trang - không báo lỗi gì, chỉ âm thầm cắt bớt. Khoảng ngày rộng + nhiều lượt chấm công rất dễ
+// vượt mốc này (vd 1 tháng x ~30-40 lượt/ngày x nhiều tài xế), và vì sắp xếp performed_at tăng
+// dần nên phần bị cắt luôn là NỬA SAU của khoảng ngày - tài xế/lượt nào chỉ có dữ liệu muộn trong
+// khoảng đó sẽ biến mất hoàn toàn khỏi mọi báo cáo dùng fetchJobs() (Theo Tài Xế, Nâng/Hạ, Đảo
+// Chuyển, Báo Cáo Kế Toán...), trong khi dữ liệu thật vẫn còn nguyên trong DB.
+const JOBS_FETCH_PAGE_SIZE = 1000;
+
 export async function fetchJobs(params?: { from?: string; to?: string; driverId?: string }): Promise<JobEntry[]> {
-  let query = supabase.from('job_entries').select('*, profiles!job_entries_driver_id_fkey(full_name)');
+  const rows: (JobEntryRow & { profiles: { full_name: string } | null })[] = [];
+  let offset = 0;
 
-  if (params?.from) query = query.gte('performed_at', params.from);
-  if (params?.to) query = query.lt('performed_at', params.to);
-  if (params?.driverId) query = query.eq('driver_id', params.driverId);
+  // Tự phân trang vòng lặp tới khi 1 trang trả về ÍT HƠN kích thước trang mới dừng - không tin vào
+  // 1 lần gọi duy nhất. "id" là tiêu chí sắp xếp phụ để đảm bảo thứ tự ổn định giữa các trang khi
+  // nhiều lượt trùng y hệt performed_at (tránh lệch/bỏ sót ở ranh giới trang).
+  for (;;) {
+    let query = supabase.from('job_entries').select('*, profiles!job_entries_driver_id_fkey(full_name)');
 
-  const { data, error } = await query.order('performed_at', { ascending: true });
-  if (error) throw error;
+    if (params?.from) query = query.gte('performed_at', params.from);
+    if (params?.to) query = query.lt('performed_at', params.to);
+    if (params?.driverId) query = query.eq('driver_id', params.driverId);
 
-  return (data as (JobEntryRow & { profiles: { full_name: string } | null })[]).map((row) =>
-    jobRowToEntry(row, row.profiles?.full_name ?? '')
-  );
+    const { data, error } = await query
+      .order('performed_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + JOBS_FETCH_PAGE_SIZE - 1);
+    if (error) throw error;
+
+    const page = data as (JobEntryRow & { profiles: { full_name: string } | null })[];
+    rows.push(...page);
+    if (page.length < JOBS_FETCH_PAGE_SIZE) break;
+    offset += page.length;
+  }
+
+  return rows.map((row) => jobRowToEntry(row, row.profiles?.full_name ?? ''));
 }
 
 export interface JobsPageParams {
