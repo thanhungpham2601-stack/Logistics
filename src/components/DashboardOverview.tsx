@@ -6,7 +6,7 @@ import {
 import { TrendingUp, TrendingDown, Minus, Users, Ship, Activity, Sun, Moon, Package, PackageOpen, Loader2 } from 'lucide-react';
 import { JobEntry, Driver } from '../types';
 import { ContainerSizeRow, OperationTypeRow } from '../lib/supabaseTypes';
-import { todayVN, addDaysToDateStr, daysBetweenDateStr, toVNDateStr, formatDateOnly, getDateRangeUtc } from '../utils';
+import { todayVN, addDaysToDateStr, daysBetweenDateStr, toVNDateStr, formatDateOnly, getDateRangeUtc, getAutoShift } from '../utils';
 import { fetchJobs } from '../lib/api';
 import DateRangePicker from './DateRangePicker';
 
@@ -121,8 +121,10 @@ export default function DashboardOverview({ drivers, sizes, operations }: Dashbo
   const avgPerDay = daysInRange > 0 ? totalCount / daysInRange : 0;
   const activeDrivers = new Set(periodJobs.map((j) => j.driverId)).size;
   const activeLines = new Set(periodJobs.map((j) => j.line)).size;
-  const dayShiftCount = periodJobs.filter((j) => j.shift === 'day').length;
-  const nightShiftCount = periodJobs.filter((j) => j.shift === 'night').length;
+  // Suy ca từ chính thời điểm thực hiện, KHÔNG dùng cột "shift" đã lưu - cột đó là dữ liệu rời (bản
+  // ghi cũ tự chọn tay, hoặc ghi từ thiết bị lệch múi giờ) nên có thể mâu thuẫn với giờ thực hiện.
+  const dayShiftCount = periodJobs.filter((j) => getAutoShift(new Date(j.timestamp)) === 'day').length;
+  const nightShiftCount = periodJobs.filter((j) => getAutoShift(new Date(j.timestamp)) === 'night').length;
   const cargoHangCount = periodJobs.filter((j) => j.cargoStatus === 'hang').length;
   const cargoRongCount = periodJobs.filter((j) => j.cargoStatus === 'rong').length;
 
@@ -138,7 +140,7 @@ export default function DashboardOverview({ drivers, sizes, operations }: Dashbo
       const d = toVNDateStr(j.timestamp);
       const bucket = byDate.get(d);
       if (!bucket) continue;
-      if (j.shift === 'day') bucket.day += 1;
+      if (getAutoShift(new Date(j.timestamp)) === 'day') bucket.day += 1;
       else bucket.night += 1;
     }
     return Array.from(byDate.entries()).map(([date, v]) => ({
